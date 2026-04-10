@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>netcheck 网络质量面板</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --card: #fffdf8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d9d3c7;
+      --accent: #264653;
+      --accent-soft: #dbe7ea;
+      --danger: #d65d47;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(231,111,81,0.18), transparent 20%),
+        radial-gradient(circle at left top, rgba(38,70,83,0.12), transparent 25%),
+        var(--bg);
+    }
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: 0.02em;
+    }
+    .hero p {
+      margin: 8px 0 0;
+      color: var(--muted);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 18px;
+      padding: 14px;
+      background: rgba(255,253,248,0.9);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(31,41,55,0.06);
+    }
+    .toolbar strong {
+      margin-right: 4px;
+    }
+    .preset-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .toolbar button, .toolbar input {
+      border: 1px solid rgba(38,70,83,0.18);
+      border-radius: 10px;
+      background: white;
+      color: var(--ink);
+      padding: 8px 12px;
+      font: inherit;
+    }
+    .toolbar button {
+      cursor: pointer;
+    }
+    .toolbar button.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .toolbar .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card, .panel {
+      background: var(--card);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(31,41,55,0.06);
+    }
+    .card {
+      padding: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    .metric-list { display: grid; grid-template-columns: repeat(var(--metric-columns, 3), minmax(0, 1fr)); gap: 10px 12px; }
+    .metric-entry { min-width: 0; }
+    .metric-label { color: var(--ink); font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.25; }
+    .metric-stack { display: grid; gap: 4px; min-width: 0; }
+    .metric-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+    .metric-value { font-size: 15px; font-weight: 700; min-width: 0; line-height: 1.2; }
+    .metric-tag { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 999px; background: rgba(38,70,83,0.08); color: var(--muted); font-size: 10px; line-height: 1.2; white-space: nowrap; }
+    .meta { display: grid; grid-template-columns: 220px 1fr; gap: 14px; margin-bottom: 20px; }
+    .panel { padding: 16px; }
+    .panel h3 { margin: 0 0 10px; font-size: 18px; }
+    .dimension { margin-bottom: 20px; }
+    .dimension h2 { margin: 0 0 10px; font-size: 20px; }
+    .dimension-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .chart {
+      padding: 14px;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+    .chart-header h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .chart-header span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .chart svg {
+      width: 100%;
+      height: 220px;
+      display: block;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(244,241,234,0.35));
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: rgba(38,70,83,0.04);
+    }
+    .empty {
+      color: var(--muted);
+      padding: 16px;
+    }
+    .error {
+      color: var(--danger);
+    }
+    @media (max-width: 980px) {
+      .summary-grid, .meta, .dimension-grid, .metric-list {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div>
+        <h1>netcheck 网络质量面板</h1>
+      </div>
+      <div>
+        <p id="generated-at"></p>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <strong>时间范围</strong>
+      <div class="preset-group">
+        <button data-range="30m">最近 30 分钟</button>
+        <button data-range="1h">最近 1 小时</button>
+        <button data-range="6h">最近 6 小时</button>
+        <button data-range="24h">最近 24 小时</button>
+        <button data-range="7d">最近 7 天</button>
+      </div>
+      <input id="start-input" type="datetime-local">
+      <input id="end-input" type="datetime-local">
+      <button id="apply-custom">应用自定义范围</button>
+    </section>
+
+    <section class="summary-grid" id="summary-grid"></section>
+
+    <section class="meta">
+      <div class="panel">
+        <h3>异常概览</h3>
+        <div id="event-meta"></div>
+      </div>
+      <div class="panel">
+        <h3>链路异常统计</h3>
+        <div id="cause-table"></div>
+      </div>
+    </section>
+
+    <section id="group-container"></section>
+
+    <section class="panel">
+      <h3>事件时间轴（最近 10 条）</h3>
+      <div id="event-table"></div>
+    </section>
+  </div>
+
+  <script>
+    const liveMode = {{if .LiveMode}}true{{else}}false{{end}};
+    const initialPayload = {{.InitialJSON}};
+    const defaultRange = "{{.DefaultMode}}";
+    let currentQuery = null;
+
+    document.querySelectorAll('[data-range]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!liveMode) return;
+        currentQuery = { range: button.dataset.range };
+        setActivePreset(button.dataset.range);
+        loadRange(currentQuery, false);
+      });
+    });
+
+    document.getElementById('apply-custom').addEventListener('click', () => {
+      if (!liveMode) return;
+      const start = document.getElementById('start-input').value;
+      const end = document.getElementById('end-input').value;
+      if (!start || !end) {
+        window.alert('请同时填写开始和结束时间');
+        return;
+      }
+      currentQuery = { start, end };
+      clearPresetActive();
+      loadRange(currentQuery, false);
+    });
+
+    function bootstrap() {
+      if (liveMode) {
+        currentQuery = { range: defaultRange };
+        setActivePreset(defaultRange);
+        loadRange(currentQuery, false);
+        window.setInterval(() => loadRange(currentQuery, true), 30000);
+        return;
+      }
+      disableToolbar();
+      render(initialPayload, false);
+    }
+    async function loadRange(params, preserveControls) {
+      try {
+        const query = new URLSearchParams(params);
+        const response = await fetch(`/api/report-data?${query.toString()}`);
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const payload = await response.json();
+        render(payload, preserveControls);
+      } catch (error) {
+        document.getElementById('generated-at').innerHTML = `<span class="error">${error.message}</span>`;
+      }
+    }
+
+    function render(payload, preserveControls) {
+      document.getElementById('generated-at').textContent = `更新时间：${payload.generated_at}`;
+      renderSummary(payload.summary || []);
+      renderEventMeta(payload.event_meta || { count: 0, longest: '0s' });
+      renderCauses(payload.causes || []);
+      renderGroups(payload.groups || []);
+      renderEvents(payload.events || []);
+      if (liveMode && !preserveControls) {
+        document.getElementById('start-input').value = toDateTimeLocal(payload.range_start);
+        document.getElementById('end-input').value = toDateTimeLocal(payload.range_end);
+      }
+    }
+    function renderSummary(cards) {
+      const root = document.getElementById('summary-grid');
+      root.innerHTML = '';
+      cards.forEach((card) => {
+        const article = document.createElement('article');
+        article.className = 'card';
+        article.innerHTML = `
+          <h2>${card.title}</h2>
+          <div class="metric-list" style="--metric-columns:${Math.max((card.metrics || []).length, 1)};">
+            ${(card.metrics || []).map((metric) => renderSummaryMetric(metric)).join('')}
+          </div>
+        `;
+        root.appendChild(article);
+      });
+    }
+    function renderSummaryMetric(metric) {
+      if (metric.lines && metric.lines.length) {
+        return `
+          <div class="metric-entry">
+            <div class="metric-label">${metric.label}</div>
+            <div class="metric-stack">
+              ${metric.lines.map((line) => `
+                <div class="metric-row">
+                  <span class="metric-value">${line.value}</span>
+                  <span class="metric-tag">${line.label}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="metric-entry">
+          <div class="metric-label">${metric.label}</div>
+          <div class="metric-row">
+            <span class="metric-value">${metric.value}</span>
+          </div>
+        </div>
+      `;
+    }
+    function renderEventMeta(meta) {
+      document.getElementById('event-meta').innerHTML = `
+        <div class="metric-label">异常次数</div>
+        <div class="metric-value">${meta.count}</div>
+        <div class="metric-label" style="margin-top:12px;">最长持续</div>
+        <div class="metric-value">${meta.longest}</div>
+      `;
+    }
+    function renderCauses(causes) {
+      const root = document.getElementById('cause-table');
+      if (!causes.length) {
+        root.innerHTML = '<div class="empty">当前时间范围内没有异常归因数据。</div>';
+        return;
+      }
+      root.innerHTML = `
+        <table>
+          <thead><tr><th>类别</th><th>累计时长</th></tr></thead>
+          <tbody>
+            ${causes.map((item) => `<tr><td>${item.name}</td><td>${item.duration}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    function renderGroups(groups) {
+      const root = document.getElementById('group-container');
+      root.innerHTML = '';
+      groups.forEach((group) => {
+        const section = document.createElement('section');
+        section.className = 'dimension';
+        section.innerHTML = `<h2>${group.title}</h2><div class="dimension-grid"></div>`;
+        root.appendChild(section);
+        const grid = section.querySelector('.dimension-grid');
+        (group.charts || []).forEach((chart) => {
+          const article = document.createElement('article');
+          article.className = 'card chart';
+          article.innerHTML = `
+            <div class="chart-header">
+              <h3>${chart.title}</h3>
+              <span>${chart.unit}</span>
+            </div>
+            <svg viewBox="0 0 560 220" role="img" aria-label="${chart.title}"></svg>
+          `;
+          grid.appendChild(article);
+          drawChart(article.querySelector('svg'), chart);
+        });
+      });
+    }
+    function renderEvents(events) {
+      const root = document.getElementById('event-table');
+      if (!events.length) {
+        root.innerHTML = '<div class="empty">当前时间范围内没有事件记录。</div>';
+        return;
+      }
+      root.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>类别</th>
+              <th>状态</th>
+              <th>摘要</th>
+              <th>证据</th>
+              <th>开始</th>
+              <th>结束</th>
+              <th>持续</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${events.map((item) => `
+              <tr>
+                <td>${item.name}</td>
+                <td>${item.status}</td>
+                <td>${item.summary}</td>
+                <td>${item.evidence}</td>
+                <td>${item.started_at}</td>
+                <td>${item.ended_at}</td>
+                <td>${item.duration}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    function drawChart(svg, chart) {
+      const width = 560;
+      const height = 220;
+      const padding = { top: 12, right: 16, bottom: 26, left: 48 };
+      const series = chart.series[0];
+      const points = series.points || [];
+      if (!points.length) {
+        svg.innerHTML = `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280">无数据</text>`;
+        return;
+      }
+
+      const values = points.map((item) => item.value);
+      const times = points.map((item) => new Date(item.ts).getTime());
+      const minX = Math.min(...times);
+      const maxX = Math.max(...times);
+      let minY = chart.start_at_zero ? 0 : Math.min(...values);
+      let maxY = Math.max(...values);
+      if (chart.unit === '比例') {
+        maxY = maxY === 0 ? 0.1 : Math.min(1, Math.max(maxY * 1.25, 0.05));
+      }
+      if (minY === maxY) {
+        maxY = maxY === 0 ? 1 : maxY * 1.2;
+      }
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const x = (value) => padding.left + ((value - minX) / Math.max(1, maxX - minX)) * plotWidth;
+      const y = (value) => padding.top + (1 - ((value - minY) / Math.max(1, maxY - minY))) * plotHeight;
+
+      let polyline = '';
+      points.forEach((point) => {
+        polyline += `${x(new Date(point.ts).getTime()).toFixed(1)},${y(point.value).toFixed(1)} `;
+      });
+
+      const ticks = 4;
+      let grid = '';
+      for (let index = 0; index <= ticks; index += 1) {
+        const gy = padding.top + (plotHeight / ticks) * index;
+        const tickValue = maxY - ((maxY - minY) / ticks) * index;
+        grid += `<line x1="${padding.left}" y1="${gy}" x2="${width - padding.right}" y2="${gy}" stroke="rgba(38,70,83,0.12)" />`;
+        grid += `<text x="${padding.left - 10}" y="${gy + 4}" text-anchor="end" font-size="11" fill="#6b7280">${tickValue.toFixed(chart.unit === '比例' ? 2 : 1)}</text>`;
+      }
+
+      const startLabel = formatTime(points[0].ts, chart.time_format);
+      const endLabel = formatTime(points[points.length - 1].ts, chart.time_format);
+      svg.innerHTML = `
+        ${grid}
+        <line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" stroke="#264653" />
+        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" stroke="#264653" />
+        <polyline fill="none" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polyline.trim()}" />
+        <text x="${padding.left}" y="${height - 8}" font-size="11" fill="#6b7280">${startLabel}</text>
+        <text x="${width - padding.right}" y="${height - 8}" text-anchor="end" font-size="11" fill="#6b7280">${endLabel}</text>
+      `;
+    }
+    function formatTime(value, mode) {
+      const date = new Date(value);
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      const minute = String(date.getMinutes()).padStart(2, '0');
+      const second = String(date.getSeconds()).padStart(2, '0');
+      if (mode === 'second') return `${hour}:${minute}:${second}`;
+      if (mode === 'hour') return `${month}-${day} ${hour}:00`;
+      return `${hour}:${minute}`;
+    }
+    function setActivePreset(range) {
+      document.querySelectorAll('[data-range]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.range === range);
+      });
+    }
+    function clearPresetActive() {
+      document.querySelectorAll('[data-range]').forEach((button) => button.classList.remove('active'));
+    }
+    function disableToolbar() {
+      document.querySelectorAll('.toolbar button, .toolbar input').forEach((node) => {
+        node.disabled = true;
+      });
+    }
+    function toDateTimeLocal(value) {
+      return value.replace(' ', 'T');
+    }
+    bootstrap();
+  </script>
+</body>
+</html>

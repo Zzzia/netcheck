@@ -1,0 +1,340 @@
+package monitor
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"netcheck/internal/config"
+	"netcheck/internal/model"
+	"netcheck/internal/probe"
+	"netcheck/internal/storage"
+)
+
+type monitorSample struct {
+	sample model.Sample
+}
+
+func Run(ctx context.Context, cfg config.Config) error {
+	store, err := storage.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	if err := printStartupSummary(cfg); err != nil {
+		return err
+	}
+
+	httpClient := &http.Client{
+		Timeout: time.Duration(cfg.Sampling.HTTPTimeoutMs) * time.Millisecond,
+	}
+	sampleCh := make(chan monitorSample, 256)
+	errCh := make(chan error, 32)
+
+	var gateway struct {
+		sync.RWMutex
+		value string
+	}
+	refreshGateway := func() {
+		value, gatewayErr := probe.DefaultGateway()
+		if gatewayErr != nil {
+			errCh <- gatewayErr
+			return
+		}
+		gateway.Lock()
+		gateway.value = value
+		gateway.Unlock()
+	}
+	refreshGateway()
+
+	startTask(ctx, time.Second*30, func(taskCtx context.Context) {
+		refreshGateway()
+	})
+	startTask(ctx, time.Duration(cfg.Sampling.GatewayIntervalSec)*time.Second, func(taskCtx context.Context) {
+		gateway.RLock()
+		target := gateway.value
+		gateway.RUnlock()
+		if strings.TrimSpace(target) == "" {
+			refreshGateway()
+			return
+		}
+		result := probe.PingOnce(taskCtx, target, time.Duration(cfg.Sampling.PingTimeoutSec)*time.Second)
+		emitSample(taskCtx, sampleCh, model.Sample{
+			Timestamp: time.Now(),
+			Layer:     "local",
+			Metric:    "ping",
+			Target:    result.Target,
+			Success:   result.Success,
+			LatencyMs: result.LatencyMs,
+			Detail:    "gateway",
+			ErrorText: errString(result.Err),
+		})
+	})
+	startRemoteLatencyTask(ctx, cfg.Sampling.DomesticLatencyIntervalSec, cfg.Targets.DomesticLatency, "domestic", cfg, sampleCh)
+	startRemoteLatencyTask(ctx, cfg.Sampling.InternationalLatencySeconds, cfg.Targets.InternationalLatency, "international", cfg, sampleCh)
+	startDownloadTask(ctx, 5*time.Second, cfg.Sampling.DomesticDownloadIntervalSec, cfg.Targets.DomesticDownloads, "domestic", cfg.Sampling.DomesticDownloadBytes, httpClient, sampleCh)
+	startDownloadTask(ctx, 45*time.Second, cfg.Sampling.InternationalDownloadSec, cfg.Targets.InternationalDownloads, "international", cfg.Sampling.InternationalDownloadBytes, httpClient, sampleCh)
+
+	trackers := map[string]*stateTracker{
+		"local":         trackerPtr(newTracker(cfg)),
+		"domestic":      trackerPtr(newTracker(cfg)),
+		"international": trackerPtr(newTracker(cfg)),
+	}
+	lastEvaluated := map[string]time.Time{}
+	stateWindows := newWindows()
+
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			now := time.Now()
+			for _, tracker := range trackers {
+				if tracker.eventID != 0 {
+					if err := store.EndEvent(tracker.eventID, now); err != nil {
+						return err
+					}
+					tracker.eventID = 0
+				}
+			}
+			return nil
+		case err := <-errCh:
+			fmt.Printf("[%s] 背景错误: %v\n", time.Now().Format(time.RFC3339), err)
+		case item := <-sampleCh:
+			if err := store.InsertSample(item.sample); err != nil {
+				return err
+			}
+			stateWindows.add(item.sample)
+			if shouldEvaluateLayer(item.sample.Layer, item.sample.Timestamp, lastEvaluated, cfg) {
+				lastEvaluated[item.sample.Layer] = item.sample.Timestamp
+				snapshots := stateWindows.evaluate(cfg, item.sample.Timestamp)
+				snapshot := snapshots[item.sample.Layer]
+				change := trackers[item.sample.Layer].step(item.sample.Layer, snapshot)
+				if change.Started {
+					eventID, beginErr := store.BeginEvent(item.sample.Layer, "degraded", change.Summary, change.Evidence, change.Timestamp)
+					if beginErr != nil {
+						return beginErr
+					}
+					trackers[item.sample.Layer].eventID = eventID
+					if cfg.Alerts.PrintStateChanges {
+						fmt.Printf("[%s] 异常开始 [%s] %s (%s)\n", change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer), change.Summary, safeEvidence(change.Evidence))
+					}
+				}
+				if change.Resolved {
+					if trackers[item.sample.Layer].eventID != 0 {
+						if endErr := store.EndEvent(trackers[item.sample.Layer].eventID, change.Timestamp); endErr != nil {
+							return endErr
+						}
+					}
+					trackers[item.sample.Layer].eventID = 0
+					if cfg.Alerts.PrintStateChanges {
+						fmt.Printf("[%s] 异常恢复 [%s] %s\n", change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer), change.Summary)
+					}
+				}
+			}
+		}
+	}
+}
+
+func startRemoteLatencyTask(
+	ctx context.Context,
+	intervalSec int,
+	targets []config.Target,
+	layer string,
+	cfg config.Config,
+	sampleCh chan<- monitorSample,
+) {
+	startTask(ctx, time.Duration(intervalSec)*time.Second, func(taskCtx context.Context) {
+		httpClient := &http.Client{
+			Timeout: time.Duration(cfg.Sampling.HTTPTimeoutMs) * time.Millisecond,
+		}
+		timeout := time.Duration(cfg.Sampling.ConnectTimeoutMs) * time.Millisecond
+		for _, target := range targets {
+			result := probe.TCPConnectOnce(taskCtx, target.Address, timeout)
+			detail := target.Address
+			if strings.TrimSpace(target.URL) != "" {
+				result = probe.HTTPLatencyOnce(taskCtx, httpClient, target.URL)
+				detail = target.URL
+			}
+			emitSample(taskCtx, sampleCh, model.Sample{
+				Timestamp: time.Now(),
+				Layer:     layer,
+				Metric:    "tcp_connect",
+				Target:    target.Name,
+				Success:   result.Success,
+				LatencyMs: result.LatencyMs,
+				Detail:    detail,
+				ErrorText: errString(result.Err),
+			})
+		}
+	})
+}
+
+func startDownloadTask(
+	ctx context.Context,
+	initialDelay time.Duration,
+	intervalSec int,
+	targets []config.DownloadItem,
+	layer string,
+	sampleBytes int64,
+	client *http.Client,
+	sampleCh chan<- monitorSample,
+) {
+	startTaskWithDelay(ctx, initialDelay, time.Duration(intervalSec)*time.Second, func(taskCtx context.Context) {
+		for _, target := range targets {
+			result := probe.DownloadOnce(taskCtx, client, target.URL, sampleBytes)
+			printDownloadResult(layer, result)
+			emitSample(taskCtx, sampleCh, model.Sample{
+				Timestamp: time.Now(),
+				Layer:     layer,
+				Metric:    "download",
+				Target:    target.Name,
+				Success:   result.Success,
+				LatencyMs: result.DurationMs,
+				Value:     result.ThroughputMbps,
+				BytesRX:   result.BytesRead,
+				Detail:    fmt.Sprintf("status=%d url=%s", result.StatusCode, target.URL),
+				ErrorText: errString(result.Err),
+			})
+		}
+	})
+}
+
+func startTask(ctx context.Context, interval time.Duration, job func(context.Context)) {
+	startTaskWithDelay(ctx, 0, interval, job)
+}
+
+func startTaskWithDelay(ctx context.Context, initialDelay, interval time.Duration, job func(context.Context)) {
+	sem := make(chan struct{}, 1)
+	run := func() {
+		select {
+		case sem <- struct{}{}:
+		default:
+			return
+		}
+		go func() {
+			defer func() { <-sem }()
+			job(ctx)
+		}()
+	}
+	if initialDelay == 0 {
+		run()
+	} else {
+		timer := time.NewTimer(initialDelay)
+		go func() {
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				run()
+			}
+		}()
+	}
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func printStartupSummary(cfg config.Config) error {
+	domesticBudgetMB := float64(cfg.Sampling.DomesticDownloadBytes*int64((24*time.Hour)/(time.Duration(cfg.Sampling.DomesticDownloadIntervalSec)*time.Second))*int64(len(cfg.Targets.DomesticDownloads))) / 1024.0 / 1024.0
+	internationalBudgetMB := float64(cfg.Sampling.InternationalDownloadBytes*int64((24*time.Hour)/(time.Duration(cfg.Sampling.InternationalDownloadSec)*time.Second))*int64(len(cfg.Targets.InternationalDownloads))) / 1024.0 / 1024.0
+	fmt.Printf("netcheck 已启动，数据库: %s\n", cfg.DBPath)
+	fmt.Printf("网关采样: %ds 一次，国内下载: %ds 一次，国外下载: %ds 一次\n",
+		cfg.Sampling.GatewayIntervalSec,
+		cfg.Sampling.DomesticDownloadIntervalSec,
+		cfg.Sampling.InternationalDownloadSec,
+	)
+	fmt.Printf("估算日下载流量: 国内 %.1fMB，国外 %.1fMB\n", domesticBudgetMB, internationalBudgetMB)
+	return nil
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func trackerPtr(value stateTracker) *stateTracker {
+	return &value
+}
+
+func safeEvidence(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "无额外证据"
+	}
+	return value
+}
+
+func emitSample(ctx context.Context, sampleCh chan<- monitorSample, sample model.Sample) {
+	select {
+	case <-ctx.Done():
+	case sampleCh <- monitorSample{sample: sample}:
+	}
+}
+
+func shouldEvaluateLayer(layer string, now time.Time, lastEvaluated map[string]time.Time, cfg config.Config) bool {
+	interval := evaluationInterval(layer, cfg)
+	last := lastEvaluated[layer]
+	if last.IsZero() {
+		return true
+	}
+	return now.Sub(last) >= interval
+}
+
+func evaluationInterval(layer string, cfg config.Config) time.Duration {
+	switch layer {
+	case "local":
+		return 10 * time.Second
+	case "domestic":
+		return minDuration(
+			time.Duration(cfg.Sampling.DomesticLatencyIntervalSec)*time.Second,
+			time.Duration(cfg.Sampling.DomesticDownloadIntervalSec)*time.Second,
+		)
+	case "international":
+		return minDuration(
+			time.Duration(cfg.Sampling.InternationalLatencySeconds)*time.Second,
+			time.Duration(cfg.Sampling.InternationalDownloadSec)*time.Second,
+		)
+	default:
+		return 10 * time.Second
+	}
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func printDownloadResult(layer string, result probe.DownloadResult) {
+	label := "国内"
+	if layer == "international" {
+		label = "国外"
+	}
+	now := time.Now().Format(time.RFC3339)
+	if !result.Success {
+		fmt.Printf("[%s] 测速 [%s] 失败: %s\n", now, label, errString(result.Err))
+		return
+	}
+	fmt.Printf("[%s] 测速 [%s] %.2f Mbps\n", now, label, result.ThroughputMbps)
+}
