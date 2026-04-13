@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"netcheck/internal/monitor"
 	"netcheck/internal/report"
 )
+
+const defaultUIAddr = "0.0.0.0:8765"
 
 func Run(args []string) error {
 	if len(args) == 0 {
@@ -52,12 +55,8 @@ func runDefault() error {
 		errCh <- monitor.Run(ctx, cfg)
 	}()
 	go func() {
-		errCh <- report.Serve(ctx, cfg.DBPath, "127.0.0.1:8765", func(actualAddr string) {
-			if actualAddr == "127.0.0.1:8765" {
-				fmt.Printf("netcheck UI 已启动: http://%s\n", actualAddr)
-				return
-			}
-			fmt.Printf("netcheck UI 已启动，默认地址 %s 已被占用，已切换到: http://%s\n", "127.0.0.1:8765", actualAddr)
+		errCh <- report.Serve(ctx, cfg.DBPath, defaultUIAddr, func(actualAddr string) {
+			fmt.Println(buildUIReadyMessage(defaultUIAddr, actualAddr))
 		})
 	}()
 
@@ -121,7 +120,7 @@ func runReport(args []string) error {
 func runUI(args []string) error {
 	fs := flag.NewFlagSet("ui", flag.ContinueOnError)
 	configPath := fs.String("config", "", "配置文件路径")
-	addr := fs.String("addr", "127.0.0.1:8765", "监听地址")
+	addr := fs.String("addr", defaultUIAddr, "监听地址")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -132,11 +131,7 @@ func runUI(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return report.Serve(ctx, cfg.DBPath, *addr, func(actualAddr string) {
-		if actualAddr == *addr {
-			fmt.Printf("netcheck UI 已启动: http://%s\n", actualAddr)
-			return
-		}
-		fmt.Printf("netcheck UI 已启动，默认地址 %s 已被占用，已切换到: http://%s\n", *addr, actualAddr)
+		fmt.Println(buildUIReadyMessage(*addr, actualAddr))
 	})
 }
 
@@ -229,7 +224,55 @@ func printUsage() {
 
   netcheck monitor [--config path] [--duration 5m]
   netcheck report [--config path] [--since 24h] [--start 2026-04-10T09:00 --end 2026-04-10T18:00] [--output report.html]
-  netcheck ui [--config path] [--addr 127.0.0.1:8765]
+  netcheck ui [--config path] [--addr 0.0.0.0:8765]
   netcheck clear [--config path]
   netcheck init-config [--output path] [--force]`)
+}
+
+func buildUIReadyMessage(requestedAddr, actualAddr string) string {
+	requestedDisplay := normalizeAnnounceAddr(requestedAddr)
+	actualDisplay := normalizeAnnounceAddr(actualAddr)
+	localAccessURL := buildLocalAccessURL(actualDisplay)
+
+	if requestedDisplay == actualDisplay {
+		if localAccessURL == "" {
+			return fmt.Sprintf("netcheck UI 已启动，监听地址: %s", actualDisplay)
+		}
+		return fmt.Sprintf("netcheck UI 已启动，监听地址: %s，本机访问: %s", actualDisplay, localAccessURL)
+	}
+	if localAccessURL == "" {
+		return fmt.Sprintf("netcheck UI 已启动，默认监听地址 %s 已被占用，已切换到: %s", requestedDisplay, actualDisplay)
+	}
+	return fmt.Sprintf(
+		"netcheck UI 已启动，默认监听地址 %s 已被占用，已切换到: %s，本机访问: %s",
+		requestedDisplay,
+		actualDisplay,
+		localAccessURL,
+	)
+}
+
+func normalizeAnnounceAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func buildLocalAccessURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	switch host {
+	case "", "0.0.0.0":
+		return fmt.Sprintf("http://127.0.0.1:%s", port)
+	case "::":
+		return fmt.Sprintf("http://[::1]:%s", port)
+	default:
+		return fmt.Sprintf("http://%s", net.JoinHostPort(host, port))
+	}
 }

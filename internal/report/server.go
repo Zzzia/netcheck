@@ -71,7 +71,7 @@ func Serve(ctx context.Context, dbPath, addr string, onReady func(string)) error
 func listenWithFallback(addr string) (net.Listener, string, error) {
 	listener, err := net.Listen("tcp", addr)
 	if err == nil {
-		return listener, normalizeLocalAddr(listener.Addr().String()), nil
+		return listener, normalizeListenerAddr(listener.Addr().String()), nil
 	}
 
 	host, portText, splitErr := net.SplitHostPort(addr)
@@ -90,7 +90,7 @@ func listenWithFallback(addr string) (net.Listener, string, error) {
 		candidate := net.JoinHostPort(host, strconv.Itoa(port+offset))
 		fallback, listenErr := net.Listen("tcp", candidate)
 		if listenErr == nil {
-			return fallback, normalizeLocalAddr(fallback.Addr().String()), nil
+			return fallback, normalizeListenerAddr(fallback.Addr().String()), nil
 		}
 		if !isAddrInUse(listenErr) {
 			return nil, "", fmt.Errorf("监听地址 %s 失败: %w", candidate, listenErr)
@@ -99,13 +99,13 @@ func listenWithFallback(addr string) (net.Listener, string, error) {
 	return nil, "", fmt.Errorf("默认地址 %s 已被占用，且后续 20 个端口也不可用", addr)
 }
 
-func normalizeLocalAddr(addr string) string {
+func normalizeListenerAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return addr
 	}
-	if host == "" || host == "::" || host == "0.0.0.0" {
-		host = "127.0.0.1"
+	if host == "" {
+		host = "0.0.0.0"
 	}
 	return net.JoinHostPort(host, port)
 }
