@@ -77,9 +77,10 @@ type reportData struct {
 }
 
 type templatePageData struct {
-	LiveMode    bool
-	InitialJSON template.JS
-	DefaultMode string
+	LiveMode     bool
+	InitialJSON  template.JS
+	DefaultMode  string
+	ReportScript template.JS
 }
 
 type metricAggregate struct {

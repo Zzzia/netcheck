@@ -13,15 +13,19 @@ import (
 //go:embed report.html.tmpl
 var reportTemplate string
 
+//go:embed report.js
+var reportScript string
+
 func Generate(dbPath string, start, end time.Time, output string) error {
 	payload, err := LoadData(dbPath, start, end)
 	if err != nil {
 		return err
 	}
 	return writePage(output, templatePageData{
-		LiveMode:    false,
-		InitialJSON: mustJSON(payload),
-		DefaultMode: "static",
+		LiveMode:     false,
+		InitialJSON:  mustJSON(payload),
+		DefaultMode:  "static",
+		ReportScript: template.JS(reportScript),
 	})
 }
 
@@ -32,9 +36,10 @@ func RenderLivePage() ([]byte, error) {
 	}
 	var builder bytes.Buffer
 	if err := tmpl.Execute(&builder, templatePageData{
-		LiveMode:    true,
-		InitialJSON: template.JS("null"),
-		DefaultMode: "1h",
+		LiveMode:     true,
+		InitialJSON:  template.JS("null"),
+		DefaultMode:  "1h",
+		ReportScript: template.JS(reportScript),
 	}); err != nil {
 		return nil, fmt.Errorf("渲染动态页面失败: %w", err)
 	}
