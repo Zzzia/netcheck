@@ -34,6 +34,14 @@ func TestBuildSummaryCardsUsesLowerTailForDownload(t *testing.T) {
 	}
 }
 
+func TestBuildReportDataDoesNotBlockOnCodexLog(t *testing.T) {
+	now := time.Date(2026, 5, 6, 15, 0, 0, 0, time.Local)
+	payload := buildReportData(nil, nil, now.Add(-time.Hour), now)
+	if payload.Codex != nil {
+		t.Fatal("动态网络报表不应同步附带 Codex 日志统计")
+	}
+}
+
 func TestBuildEventRowsKeepsLatestTen(t *testing.T) {
 	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
 	var events []model.Event

@@ -256,7 +256,7 @@ func normalizeAnnounceAddr(addr string) string {
 	if err != nil {
 		return addr
 	}
-	if host == "" {
+	if host == "" || host == "::" {
 		host = "0.0.0.0"
 	}
 	return net.JoinHostPort(host, port)

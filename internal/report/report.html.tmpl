@@ -119,6 +119,31 @@
     .dimension { margin-bottom: 20px; }
     .dimension h2 { margin: 0 0 10px; font-size: 20px; }
     .dimension-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .codex-section { margin-bottom: 20px; }
+    .codex-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin: 0 0 10px;
+    }
+    .codex-title-row h2 { margin: 0; font-size: 20px; }
+    .codex-title-row span { color: var(--muted); font-size: 13px; }
+    .codex-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .codex-metric { min-height: 92px; }
+    .codex-hint {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .codex-chart { margin-bottom: 14px; }
+    .chart.codex-chart svg { height: 240px; }
     .chart {
       position: relative;
       padding: 14px;
@@ -197,9 +222,10 @@
       color: var(--danger);
     }
     @media (max-width: 980px) {
-      .summary-grid, .meta, .dimension-grid, .metric-list {
+      .summary-grid, .meta, .dimension-grid, .metric-list, .codex-grid {
         grid-template-columns: 1fr;
       }
+      .codex-title-row { display: block; }
     }
   </style>
 </head>
@@ -243,6 +269,8 @@
 
     <section id="group-container"></section>
 
+    <section class="codex-section" id="codex-section"></section>
+
     <section class="panel">
       <h3>事件时间轴（最近 10 条）</h3>
       <div id="event-table"></div>
@@ -255,6 +283,9 @@
       initialPayload: {{.InitialJSON}},
       defaultRange: "{{.DefaultMode}}"
     };
+  </script>
+  <script>
+    {{.CodexScript}}
   </script>
   <script>
     {{.ReportScript}}

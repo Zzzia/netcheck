@@ -39,11 +39,15 @@ func Serve(ctx context.Context, dbPath, addr string, onReady func(string)) error
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if err := json.NewEncoder(w).Encode(payload); err != nil {
-			http.Error(w, fmt.Sprintf("序列化响应失败: %v", err), http.StatusInternalServerError)
+		writeJSON(w, payload)
+	})
+	mux.HandleFunc("/api/codex-data", func(w http.ResponseWriter, r *http.Request) {
+		start, end, err := parseTimeRange(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		writeJSON(w, buildCodexReport(start, end))
 	})
 
 	listener, actualAddr, err := listenWithFallback(addr)
@@ -66,6 +70,14 @@ func Serve(ctx context.Context, dbPath, addr string, onReady func(string)) error
 		return fmt.Errorf("启动 Web UI 失败: %w", err)
 	}
 	return nil
+}
+
+func writeJSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, fmt.Sprintf("序列化响应失败: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 func listenWithFallback(addr string) (net.Listener, string, error) {

@@ -1,5 +1,9 @@
 const { liveMode, initialPayload, defaultRange } = window.reportConfig;
 let currentQuery = null;
+let codexRequestSeq = 0;
+let codexLastQueryKey = '';
+let codexLastFetchAt = 0;
+const codexRefreshIntervalMs = 120000;
 
 document.querySelectorAll('[data-range]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -44,8 +48,41 @@ async function loadRange(params, preserveControls) {
     }
     const payload = await response.json();
     render(payload, preserveControls);
+    if (liveMode && shouldLoadCodex(params, preserveControls)) {
+      loadCodex(params, !preserveControls);
+    }
   } catch (error) {
     document.getElementById('generated-at').innerHTML = `<span class="error">${error.message}</span>`;
+  }
+}
+
+function shouldLoadCodex(params, preserveControls) {
+  const queryKey = new URLSearchParams(params).toString();
+  if (!preserveControls || queryKey !== codexLastQueryKey) {
+    return true;
+  }
+  return Date.now() - codexLastFetchAt > codexRefreshIntervalMs;
+}
+
+async function loadCodex(params, showLoading) {
+  const requestID = ++codexRequestSeq;
+  codexLastQueryKey = new URLSearchParams(params).toString();
+  codexLastFetchAt = Date.now();
+  if (showLoading) {
+    renderCodexLoading('正在分析 Codex 本地日志...');
+  }
+  try {
+    const query = new URLSearchParams(params);
+    const response = await fetch(`/api/codex-data?${query.toString()}`);
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = await response.json();
+    if (requestID !== codexRequestSeq) return;
+    renderCodex(payload);
+  } catch (error) {
+    if (requestID !== codexRequestSeq) return;
+    renderCodex({ available: false, error: error.message });
   }
 }
 
@@ -55,6 +92,9 @@ function render(payload, preserveControls) {
   renderEventMeta(payload.event_meta || { count: 0, longest: '0s' });
   renderCauses(payload.causes || []);
   renderGroups(payload.groups || []);
+  if (!liveMode) {
+    renderCodex(payload.codex || null);
+  }
   renderEvents(payload.events || []);
   if (liveMode && !preserveControls) {
     document.getElementById('start-input').value = toDateTimeLocal(payload.range_start);

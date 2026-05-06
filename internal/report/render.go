@@ -16,16 +16,22 @@ var reportTemplate string
 //go:embed report.js
 var reportScript string
 
+//go:embed report_codex.js
+var codexScript string
+
 func Generate(dbPath string, start, end time.Time, output string) error {
 	payload, err := LoadData(dbPath, start, end)
 	if err != nil {
 		return err
 	}
+	codex := buildCodexReport(start, end)
+	payload.Codex = &codex
 	return writePage(output, templatePageData{
 		LiveMode:     false,
 		InitialJSON:  mustJSON(payload),
 		DefaultMode:  "static",
 		ReportScript: template.JS(reportScript),
+		CodexScript:  template.JS(codexScript),
 	})
 }
 
@@ -40,6 +46,7 @@ func RenderLivePage() ([]byte, error) {
 		InitialJSON:  template.JS("null"),
 		DefaultMode:  "1h",
 		ReportScript: template.JS(reportScript),
+		CodexScript:  template.JS(codexScript),
 	}); err != nil {
 		return nil, fmt.Errorf("渲染动态页面失败: %w", err)
 	}
