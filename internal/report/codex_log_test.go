@@ -3,6 +3,7 @@ package report
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,11 +106,20 @@ func TestBuildCodexReportCurrentLogSmoke(t *testing.T) {
 		t.Skip("设置 NETCHECK_TEST_CURRENT_CODEX_LOG=1 时读取当前本机 Codex 日志做人工核对")
 	}
 	end := time.Now()
-	report := buildCodexReport(end.Add(-24*time.Hour), end)
+	window := 24 * time.Hour
+	if raw := os.Getenv("NETCHECK_TEST_CODEX_WINDOW_HOURS"); raw != "" {
+		hours, err := strconv.ParseFloat(raw, 64)
+		if err != nil || hours <= 0 {
+			t.Fatalf("NETCHECK_TEST_CODEX_WINDOW_HOURS 必须是正数小时，实际为 %q", raw)
+		}
+		window = time.Duration(hours * float64(time.Hour))
+	}
+	report := buildCodexReport(end.Add(-window), end)
 	if !report.Available {
 		t.Fatalf("当前 Codex 日志不可用: %s", report.Error)
 	}
-	t.Logf("Codex 近 24h: retry=%d affected_turns=%d tool_errors=%d network_candidates=%d apps_errors=%d noise=%d",
+	t.Logf("Codex 近 %.1fh: retry=%d affected_turns=%d tool_errors=%d network_candidates=%d apps_errors=%d noise=%d",
+		window.Hours(),
 		report.Summary.RetryEvents,
 		report.Summary.RetryAffectedTurns,
 		report.Summary.ToolErrors,

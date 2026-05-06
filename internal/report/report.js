@@ -1,9 +1,6 @@
 const { liveMode, initialPayload, defaultRange } = window.reportConfig;
 let currentQuery = null;
 let codexRequestSeq = 0;
-let codexLastQueryKey = '';
-let codexLastFetchAt = 0;
-const codexRefreshIntervalMs = 120000;
 
 document.querySelectorAll('[data-range]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -48,7 +45,7 @@ async function loadRange(params, preserveControls) {
     }
     const payload = await response.json();
     render(payload, preserveControls);
-    if (liveMode && shouldLoadCodex(params, preserveControls)) {
+    if (liveMode) {
       loadCodex(params, !preserveControls);
     }
   } catch (error) {
@@ -56,18 +53,8 @@ async function loadRange(params, preserveControls) {
   }
 }
 
-function shouldLoadCodex(params, preserveControls) {
-  const queryKey = new URLSearchParams(params).toString();
-  if (!preserveControls || queryKey !== codexLastQueryKey) {
-    return true;
-  }
-  return Date.now() - codexLastFetchAt > codexRefreshIntervalMs;
-}
-
 async function loadCodex(params, showLoading) {
   const requestID = ++codexRequestSeq;
-  codexLastQueryKey = new URLSearchParams(params).toString();
-  codexLastFetchAt = Date.now();
   if (showLoading) {
     renderCodexLoading('正在分析 Codex 本地日志...');
   }

@@ -73,7 +73,7 @@ func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
 		report.Error = "Codex 日志路径为空"
 		return report
 	}
-	reader, err := openCodexLogWindow(logPath, codexStart)
+	reader, exactLineNumbers, err := openCodexLogReader(logPath, codexStart)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			report.Error = "未检测到 Codex 日志"
@@ -84,7 +84,7 @@ func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
 	}
 	defer reader.Close()
 
-	parsed, err := parseCodexLog(reader, codexStart, end)
+	parsed, err := parseCodexLogWithLineMode(reader, codexStart, end, exactLineNumbers)
 	if err != nil {
 		report.Error = err.Error()
 		return report
@@ -113,6 +113,10 @@ type codexParseResult struct {
 }
 
 func parseCodexLog(reader io.Reader, start, end time.Time) (codexParseResult, error) {
+	return parseCodexLogWithLineMode(reader, start, end, true)
+}
+
+func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLineNumbers bool) (codexParseResult, error) {
 	result := codexParseResult{
 		completedTurns: map[string]codexTurnStats{},
 		other:          map[string]*codexIssueRow{},
@@ -125,9 +129,16 @@ func parseCodexLog(reader io.Reader, start, end time.Time) (codexParseResult, er
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 	bucket := chooseChartBucket(end.Sub(start))
 	for lineNo := 1; scanner.Scan(); lineNo++ {
-		item, ok := parseCodexLine(scanner.Text(), lineNo)
-		if !ok || item.ts.Before(start) || item.ts.After(end) {
+		eventLineNo := lineNo
+		if !exactLineNumbers {
+			eventLineNo = 0
+		}
+		item, ok := parseCodexLine(scanner.Text(), eventLineNo)
+		if !ok || item.ts.Before(start) {
 			continue
+		}
+		if item.ts.After(end) {
+			break
 		}
 		if isStreamClose(item.raw) {
 			result.streamRequests++

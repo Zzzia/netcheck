@@ -159,7 +159,7 @@ type codexEventRow struct {
 	Level        string `json:"level"`
 	Time         string `json:"time"`
 	Ts           string `json:"ts"`
-	Line         int    `json:"line"`
+	Line         int    `json:"line,omitempty"`
 	Model        string `json:"model,omitempty"`
 	ThreadID     string `json:"thread_id,omitempty"`
 	TurnID       string `json:"turn_id,omitempty"`

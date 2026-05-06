@@ -166,7 +166,7 @@ function drawCodexTimeline(svg, tooltip, points) {
 function formatCodexTooltipMetric(key, point) {
   const value = point.positions[key].value;
   if (key === 'stream_retry') {
-    return `${value} / ${Number(point.completed_turns || 0)}`;
+    return `${value} 次 / ${Number(point.completed_turns || 0)} 轮`;
   }
   return String(value);
 }
