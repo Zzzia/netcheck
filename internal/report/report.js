@@ -196,9 +196,9 @@ function renderEvents(events) {
           <th>状态</th>
           <th>摘要</th>
           <th>证据</th>
-          <th>开始</th>
-          <th>结束</th>
-          <th>持续</th>
+          <th>窗口内开始</th>
+          <th>窗口内结束</th>
+          <th>窗口内持续</th>
         </tr>
       </thead>
       <tbody>

@@ -148,6 +148,20 @@ func (s *Store) EndEvent(id int64, endedAt time.Time) error {
 	return nil
 }
 
+func (s *Store) LoadOpenEvents() ([]model.Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, name, status, summary, evidence, started_at, ended_at, duration_sec, is_open
+		 FROM state_events
+		 WHERE is_open = 1
+		 ORDER BY started_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询打开事件失败: %w", err)
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 func (s *Store) LoadSamplesSince(since time.Time) ([]model.Sample, error) {
 	rows, err := s.db.Query(
 		`SELECT id, ts, layer, metric, target, success, COALESCE(latency_ms, 0), COALESCE(value, 0), COALESCE(bytes_rx, 0), COALESCE(detail, ''), COALESCE(error_text, '')
@@ -198,6 +212,10 @@ func (s *Store) LoadEventsSince(since time.Time) ([]model.Event, error) {
 	}
 	defer rows.Close()
 
+	return scanEvents(rows)
+}
+
+func scanEvents(rows *sql.Rows) ([]model.Event, error) {
 	var events []model.Event
 	for rows.Next() {
 		var (
@@ -210,10 +228,11 @@ func (s *Store) LoadEventsSince(since time.Time) ([]model.Event, error) {
 			return nil, fmt.Errorf("读取事件失败: %w", err)
 		}
 		item.IsOpen = isOpenValue == 1
-		item.StartedAt, err = time.Parse(time.RFC3339Nano, startedAt)
-		if err != nil {
-			return nil, fmt.Errorf("解析事件开始时间失败: %w", err)
+		parsedStartedAt, parseErr := time.Parse(time.RFC3339Nano, startedAt)
+		if parseErr != nil {
+			return nil, fmt.Errorf("解析事件开始时间失败: %w", parseErr)
 		}
+		item.StartedAt = parsedStartedAt
 		if endedAtRaw.Valid {
 			endedAt, parseErr := time.Parse(time.RFC3339Nano, endedAtRaw.String)
 			if parseErr != nil {

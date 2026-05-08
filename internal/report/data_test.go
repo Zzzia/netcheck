@@ -70,6 +70,34 @@ func TestBuildEventRowsKeepsLatestTen(t *testing.T) {
 	}
 }
 
+func TestBuildEventRowsDisplaysClippedWindowTimes(t *testing.T) {
+	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
+	windowEnd := base.Add(time.Hour)
+	actualEnd := base.Add(2 * time.Hour)
+	rows := buildEventRows([]model.Event{
+		{
+			Name:      "international",
+			Status:    "degraded",
+			Summary:   "summary",
+			Evidence:  "evidence",
+			StartedAt: base.Add(-time.Hour),
+			EndedAt:   &actualEnd,
+		},
+	}, base, windowEnd)
+	if len(rows) != 1 {
+		t.Fatalf("期望显示跨窗口事件，实际为 %#v", rows)
+	}
+	if rows[0].StartedAt != base.Format("2006-01-02 15:04:05")+"（窗口前开始）" {
+		t.Fatalf("开始时间应显示窗口内起点，实际为 %s", rows[0].StartedAt)
+	}
+	if rows[0].EndedAt != windowEnd.Format("2006-01-02 15:04:05")+"（窗口后结束）" {
+		t.Fatalf("结束时间应显示窗口内终点，实际为 %s", rows[0].EndedAt)
+	}
+	if rows[0].Duration != "1.0h" {
+		t.Fatalf("持续时间应按窗口内时长展示，实际为 %s", rows[0].Duration)
+	}
+}
+
 func TestFormatPercentKeepsSmallNonZeroLossVisible(t *testing.T) {
 	if got := formatPercent(0.000293); got != "0.029%" {
 		t.Fatalf("期望小丢包率保留可见精度，实际为 %s", got)
@@ -93,6 +121,41 @@ func TestBuildCauseRowsOnlyCountsThreeLinks(t *testing.T) {
 	}
 	if rows[0].Name != "本地链路" || rows[1].Name != "国内链路" {
 		t.Fatalf("链路异常统计名称不符合预期: %#v", rows)
+	}
+}
+
+func TestBuildCauseRowsMergesOverlappingIntervals(t *testing.T) {
+	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
+	windowEnd := base.Add(time.Hour)
+	firstEnd := base.Add(40 * time.Minute)
+	secondStart := base.Add(20 * time.Minute)
+	secondEnd := base.Add(50 * time.Minute)
+	rows := buildCauseRows([]model.Event{
+		{Name: "domestic", Status: "degraded", StartedAt: base, EndedAt: &firstEnd},
+		{Name: "domestic", Status: "degraded", StartedAt: secondStart, EndedAt: &secondEnd},
+	}, base, windowEnd)
+	if len(rows) != 1 {
+		t.Fatalf("期望只统计国内链路，实际为 %#v", rows)
+	}
+	if rows[0].DurationSec != int64(50*time.Minute/time.Second) {
+		t.Fatalf("重叠区间应按并集统计 50 分钟，实际为 %#v", rows[0])
+	}
+}
+
+func TestBuildCauseRowsCapsStaleOpenEventAtWindow(t *testing.T) {
+	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
+	windowEnd := base.Add(time.Hour)
+	closedStart := base.Add(15 * time.Minute)
+	closedEnd := base.Add(20 * time.Minute)
+	rows := buildCauseRows([]model.Event{
+		{Name: "international", Status: "degraded", StartedAt: base.Add(-24 * time.Hour)},
+		{Name: "international", Status: "degraded", StartedAt: closedStart, EndedAt: &closedEnd},
+	}, base, windowEnd)
+	if len(rows) != 1 {
+		t.Fatalf("期望只统计国外链路，实际为 %#v", rows)
+	}
+	if rows[0].DurationSec != int64(time.Hour/time.Second) {
+		t.Fatalf("旧 open 事件与短事件重叠时应最多为窗口时长，实际为 %#v", rows[0])
 	}
 }
 

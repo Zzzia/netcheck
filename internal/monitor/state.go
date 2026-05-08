@@ -32,6 +32,13 @@ type metricStats struct {
 	AvgValue     float64
 }
 
+const (
+	localPingWindowLimit             = 20
+	remoteLatencyWindowLimit         = 24
+	domesticDownloadWindowLimit      = 6
+	internationalDownloadWindowLimit = 3
+)
+
 type windows struct {
 	localPing        rollingWindow
 	domesticTCP      rollingWindow
@@ -60,13 +67,22 @@ type stateTracker struct {
 	lastEvidence string
 }
 
+func (t *stateTracker) restoreOpenEvent(event model.Event) {
+	t.active = true
+	t.eventID = event.ID
+	t.badCount = t.enterAfter
+	t.goodCount = 0
+	t.lastSummary = event.Summary
+	t.lastEvidence = event.Evidence
+}
+
 func newWindows() *windows {
 	return &windows{
-		localPing:        rollingWindow{limit: 20},
-		domesticTCP:      rollingWindow{limit: 24},
-		domesticDL:       rollingWindow{limit: 10},
-		internationalTCP: rollingWindow{limit: 24},
-		internationalDL:  rollingWindow{limit: 10},
+		localPing:        rollingWindow{limit: localPingWindowLimit},
+		domesticTCP:      rollingWindow{limit: remoteLatencyWindowLimit},
+		domesticDL:       rollingWindow{limit: domesticDownloadWindowLimit},
+		internationalTCP: rollingWindow{limit: remoteLatencyWindowLimit},
+		internationalDL:  rollingWindow{limit: internationalDownloadWindowLimit},
 	}
 }
 

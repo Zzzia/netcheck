@@ -87,6 +87,9 @@ func Run(ctx context.Context, cfg config.Config) error {
 		"domestic":      trackerPtr(newTracker(cfg)),
 		"international": trackerPtr(newTracker(cfg)),
 	}
+	if err := restoreOpenEvents(store, trackers); err != nil {
+		return err
+	}
 	lastEvaluated := map[string]time.Time{}
 	stateWindows := newWindows()
 
@@ -142,6 +145,24 @@ func Run(ctx context.Context, cfg config.Config) error {
 			}
 		}
 	}
+}
+
+func restoreOpenEvents(store *storage.Store, trackers map[string]*stateTracker) error {
+	events, err := store.LoadOpenEvents()
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		tracker := trackers[event.Name]
+		if tracker == nil {
+			continue
+		}
+		if tracker.eventID != 0 {
+			continue
+		}
+		tracker.restoreOpenEvent(event)
+	}
+	return nil
 }
 
 func startRemoteLatencyTask(
