@@ -2,13 +2,16 @@
 
 [简体中文](README.zh-CN.md)
 
-`netcheck` is a long-running network quality monitor for understanding whether connectivity problems are local, domestic, international, or visible in AI coding tools such as Codex.
+`netcheck` is a long-running network quality monitor for vibe coding developers who need to know whether Codex feels slow because of the model, the client, or the network path underneath it.
+
+Network instability can easily dominate Codex latency. Switching Codex to a faster mode does not help much if requests keep stalling, reconnecting, or retrying; in a bad network, the same vibe coding task can take twice as long as it does on a healthy link. `netcheck` monitors local, domestic, and international network quality while also reading Codex request outcomes, so the dashboard can give a concrete network-quality assessment for AI coding sessions instead of relying on vague “it feels slow” impressions.
 
 It focuses on a few practical questions:
 
 - Is the path from this machine to the default gateway unstable?
 - Are domestic links getting slower or failing more often?
 - Are international links degraded enough to affect Codex, Claude, or other AI coding workflows?
+- Are Codex requests retrying, timing out, or slowing down at the same time as network probes degrade?
 - Is an issue just a short spike, or did it last long enough to matter?
 
 Run it without arguments to start monitoring and open the web dashboard.
@@ -38,6 +41,7 @@ Run it without arguments to start monitoring and open the web dashboard.
 - Local SQLite persistence so data survives terminal restarts.
 - Web dashboard ranges for `30m / 1h / 6h / 24h / 7d` plus custom windows.
 - Separate Codex stability panel for stream retries and network candidates, capped to the latest `24h`.
+- Correlates network probes with Codex request results to explain vibe coding slowdowns.
 - Static HTML report export.
 - One-command database reset.
 - English by default, with Simplified Chinese support for CLI text, logs, reports, and the dashboard.
@@ -124,6 +128,7 @@ The goal is not to saturate bandwidth. The default probes are intended to detect
 - Tracks sampling requests, automatic retries, timeout / DNS / TLS / 5xx-style network candidates, and completed turns.
 - Uses modern `post sampling token usage` events as the sampling-request denominator when available, with a WebSocket/stream-close fallback for legacy logs.
 - Shows a separate timeline so Codex retries can be compared with regular network probes.
+- Helps distinguish “the model is slow” from “the network made the same Codex workflow slower.”
 - Keeps local tool errors, permission noise, session-recording issues, and unknown WARN/ERROR lines out of the main network timeline.
 
 ## Common commands
