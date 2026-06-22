@@ -14,11 +14,11 @@
 <table>
   <tr>
     <td width="50%"><img src="img/cn-main.webp" width="100%" alt="netcheck 中文面板预览"></td>
-    <td width="50%"><img src="img/en-main.webp" width="100%" alt="netcheck 英文面板预览"></td>
+    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="netcheck 中文详情面板"></td>
   </tr>
   <tr>
-    <td align="center">中文面板</td>
-    <td align="center">英文面板</td>
+    <td align="center">统计概览</td>
+    <td align="center">详细指标和 Codex 时间轴</td>
   </tr>
 </table>
 
@@ -204,19 +204,6 @@ Linux 常见位置：
 - 三条链路各自的异常累计时长
 - 最近 10 条异常事件时间轴
 - Codex 断流重试和网络错误稳定性面板
-
-### 详情视图
-
-<table>
-  <tr>
-    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="netcheck 中文详情面板"></td>
-    <td width="50%"><img src="img/en-detail.webp" width="100%" alt="netcheck 英文详情面板"></td>
-  </tr>
-  <tr>
-    <td align="center">中文详情视图</td>
-    <td align="center">英文详情视图</td>
-  </tr>
-</table>
 
 ## License
 

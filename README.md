@@ -16,11 +16,11 @@ Run it without arguments to start monitoring and open the web dashboard.
 <table>
   <tr>
     <td width="50%"><img src="img/en-main.webp" width="100%" alt="English netcheck dashboard preview"></td>
-    <td width="50%"><img src="img/cn-main.webp" width="100%" alt="Simplified Chinese netcheck dashboard preview"></td>
+    <td width="50%"><img src="img/en-detail.webp" width="100%" alt="English netcheck detail dashboard"></td>
   </tr>
   <tr>
-    <td align="center">English dashboard</td>
-    <td align="center">Simplified Chinese dashboard</td>
+    <td align="center">Dashboard overview</td>
+    <td align="center">Detailed metrics and Codex timeline</td>
   </tr>
 </table>
 
@@ -209,19 +209,6 @@ The dashboard shows:
 - Accumulated incident duration by link.
 - Latest 10 incident events.
 - A Codex stability panel for stream retries and network candidates.
-
-### Detail views
-
-<table>
-  <tr>
-    <td width="50%"><img src="img/en-detail.webp" width="100%" alt="English netcheck detail dashboard"></td>
-    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="Simplified Chinese netcheck detail dashboard"></td>
-  </tr>
-  <tr>
-    <td align="center">English detail view</td>
-    <td align="center">Simplified Chinese detail view</td>
-  </tr>
-</table>
 
 ## License
 
