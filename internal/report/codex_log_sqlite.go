@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 
 	_ "modernc.org/sqlite"
 )

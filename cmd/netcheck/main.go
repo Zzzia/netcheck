@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"netcheck/internal/app"
+	"github.com/Zzzia/netcheck/internal/app"
 )
 
 func main() {

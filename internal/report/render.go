@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 //go:embed report.html.tmpl

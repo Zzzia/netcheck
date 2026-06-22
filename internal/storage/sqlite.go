@@ -9,7 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/model"
 )
 
 type Store struct {

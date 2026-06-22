@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 func TestBuildUIReadyMessageForWildcardBind(t *testing.T) {

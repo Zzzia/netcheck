@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"netcheck/internal/i18n"
-	"netcheck/internal/model"
-	"netcheck/internal/storage"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/storage"
 )
 
 func LoadData(dbPath string, start, end time.Time) (reportData, error) {

@@ -40,6 +40,12 @@ make build
 go install github.com/Zzzia/netcheck/cmd/netcheck@latest
 ```
 
+该命令会把 `netcheck` 二进制安装到 `$(go env GOPATH)/bin`（通常是 `~/go/bin`）。确认该目录已加入 `PATH` 后，即可在任意位置启动：
+
+```bash
+netcheck
+```
+
 打开终端输出的本地 URL。默认情况下，网页面板监听 `0.0.0.0:8765`；如果端口被占用，`netcheck` 会自动切到下一个可用端口，并打印实际访问地址。
 
 ## 面板内容

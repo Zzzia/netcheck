@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"netcheck/internal/i18n"
-	"netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/model"
 )
 
 func buildSeriesPoints(items map[time.Time]*aggregate, mode string) []chartPoint {

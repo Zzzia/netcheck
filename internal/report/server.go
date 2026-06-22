@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 func Serve(ctx context.Context, dbPath, addr string, onReady func(string)) error {

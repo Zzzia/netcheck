@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 const maxCodexWindow = 24 * time.Hour

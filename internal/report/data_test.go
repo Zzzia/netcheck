@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"netcheck/internal/i18n"
-	"netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/model"
 )
 
 func TestBuildSummaryCardsUsesLowerTailForDownload(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 func isNetworkCodexKind(kind string) bool {

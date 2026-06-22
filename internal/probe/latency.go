@@ -43,7 +43,7 @@ func HTTPLatencyOnce(ctx context.Context, client *http.Client, targetURL string)
 			Err:     fmt.Errorf("create HTTP latency request failed: %w", err),
 		}
 	}
-	req.Header.Set("User-Agent", "netcheck/0.1")
+	req.Header.Set("User-Agent", "github.com/Zzzia/netcheck/0.1")
 	req.Header.Set("Accept-Encoding", "identity")
 	started := time.Now()
 	resp, err := client.Do(req)

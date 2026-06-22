@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"netcheck/internal/config"
-	"netcheck/internal/i18n"
-	"netcheck/internal/model"
-	"netcheck/internal/probe"
-	"netcheck/internal/storage"
+	"github.com/Zzzia/netcheck/internal/config"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/probe"
+	"github.com/Zzzia/netcheck/internal/storage"
 )
 
 type monitorSample struct {

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"netcheck/internal/config"
-	"netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/config"
+	"github.com/Zzzia/netcheck/internal/model"
 )
 
 func TestEvaluateLocalDetectsHighJitter(t *testing.T) {

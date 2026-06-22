@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"netcheck/internal/config"
-	"netcheck/internal/i18n"
-	"netcheck/internal/model"
+	"github.com/Zzzia/netcheck/internal/config"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/model"
 )
 
 type point struct {

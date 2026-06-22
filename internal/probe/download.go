@@ -32,7 +32,7 @@ func DownloadOnce(ctx context.Context, client *http.Client, target string, sampl
 		req.Header.Set("Range", "bytes=0-"+strconv.FormatInt(sampleBytes-1, 10))
 	}
 	// Some mirrors reject an empty User-Agent or compressed responses.
-	req.Header.Set("User-Agent", "netcheck/0.1")
+	req.Header.Set("User-Agent", "github.com/Zzzia/netcheck/0.1")
 	req.Header.Set("Accept-Encoding", "identity")
 	started := time.Now()
 	resp, err := client.Do(req)

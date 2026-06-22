@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"netcheck/internal/config"
-	"netcheck/internal/i18n"
-	"netcheck/internal/monitor"
-	"netcheck/internal/report"
+	"github.com/Zzzia/netcheck/internal/config"
+	"github.com/Zzzia/netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/monitor"
+	"github.com/Zzzia/netcheck/internal/report"
 )
 
 const defaultUIAddr = "0.0.0.0:8765"

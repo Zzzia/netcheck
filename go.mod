@@ -1,4 +1,4 @@
-module netcheck
+module github.com/Zzzia/netcheck
 
 go 1.25.0
 

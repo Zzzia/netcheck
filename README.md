@@ -40,6 +40,12 @@ Or install with the Go toolchain:
 go install github.com/Zzzia/netcheck/cmd/netcheck@latest
 ```
 
+This installs the `netcheck` binary into `$(go env GOPATH)/bin` (usually `~/go/bin`). Make sure that directory is on your `PATH`, then start it from anywhere:
+
+```bash
+netcheck
+```
+
 Open the printed local URL in your browser. By default the web dashboard listens on `0.0.0.0:8765`; if the port is busy, `netcheck` automatically switches to the next available port and prints the actual address.
 
 ## What It Shows

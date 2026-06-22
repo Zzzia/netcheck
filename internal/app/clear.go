@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"netcheck/internal/config"
-	"netcheck/internal/i18n"
+	"github.com/Zzzia/netcheck/internal/config"
+	"github.com/Zzzia/netcheck/internal/i18n"
 )
 
 func runClear(args []string) error {
