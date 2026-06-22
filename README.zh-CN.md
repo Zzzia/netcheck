@@ -2,24 +2,14 @@
 
 [English](README.md)
 
-`netcheck` 是给 vibe coding 开发者使用的长期网络质量监控工具，用来判断 Codex 变慢到底是模型、客户端，还是底层网络链路造成的。
+`netcheck` 是给 vibe coding 开发者使用的 Linux 优先网络质量面板，用来判断 Codex 变慢到底是模型、客户端，还是底层网络链路造成的。
 
-网络波动会直接放大 Codex 的交互耗时。把 Codex 开到 fast，不如先让网络质量变好；同样一次 vibe coding 任务，在网络差和网络正常的情况下，整体耗时可能相差一倍。`netcheck` 一边监控本机、国内、国外链路波动，一边直接读取 Codex 请求结果，让开发者看到明确的网络质量评价，而不是只能靠“感觉慢”来判断。
-
-它重点解决这几类问题：
-
-- 电脑到默认网关是否抖动、丢包、延迟高
-- 国内链路是否变慢、失败率是否上升
-- 国外链路是否变慢，是否影响 `Codex / Claude` 这类 AI coding 使用体验
-- Codex 请求是否在网络波动时同步出现重试、超时或变慢
-- 异常是偶发毛刺，还是持续性问题
-
-默认直接运行即可开始监控，同时启动 Web 面板。
+网络波动会直接放大 Codex 的交互耗时。把 Codex 开到 fast，不如先让网络质量变好；同样一次 vibe coding 任务，在网络差和网络正常的情况下，整体耗时可能相差一倍。`netcheck` 一边监控本机、国内、国外链路波动，一边直接读取 Codex 请求结果，让网页面板给出明确的网络质量评价，而不是只能靠“感觉慢”来判断。
 
 <table>
   <tr>
-    <td width="50%"><img src="img/cn-main.webp" width="100%" alt="netcheck 中文面板预览"></td>
-    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="netcheck 中文详情面板"></td>
+    <td width="50%"><img src="img/cn-main.webp" width="100%" alt="netcheck 中文统计概览"></td>
+    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="netcheck 中文详细指标和 Codex 时间轴"></td>
   </tr>
   <tr>
     <td align="center">统计概览</td>
@@ -27,190 +17,24 @@
   </tr>
 </table>
 
-## 适合什么场景
-
-- 办公网偶发卡顿，但很难回溯到底是哪一段出问题
-- VPN 或国外链路时好时坏，想看趋势而不是只靠体感
-- 需要长时间记录网络质量，方便和时间段、会议、办公地点做对比
-- 想优先判断 AI coding 相关国外访问是否稳定
-
-## 特性
-
-- 无参数启动：监控和 UI 一起运行
-- 平时静默，只有状态变化、背景错误或测速时打印日志
-- 本地持久化到 SQLite，数据不会因为终端关闭就丢失
-- Web 面板支持最近 `30m / 1h / 6h / 24h / 7d` 和自定义时间范围
-- Web 面板会异步展示本机 Codex 断流重试和网络错误时间轴，Codex 统计范围最多取近 `24h`
-- 关联网络探针和 Codex 请求结果，解释 vibe coding 变慢是否由网络造成
-- 支持导出静态 HTML 报表
-- 支持一键清空数据库重新开始
-- 默认英文，支持 CLI、运行日志、报表和 Web 面板切换到简体中文
-
 ## 快速开始
 
-### 直接运行
-
-```bash
-./netcheck
-```
-
-启动后会做两件事：
-
-- 持续采样网络质量并写入数据库
-- 启动 UI，默认监听地址是 `0.0.0.0:8765`
-
-如果 `8765` 被占用，会自动切到其他可用端口，并在终端打印实际监听地址和本机访问地址。
-
-### 从源码构建
+在 Linux 上构建并启动：
 
 ```bash
 make build
 ./netcheck
 ```
 
-### 构建多平台二进制
+打开终端输出的本地 URL。默认情况下，网页面板监听 `0.0.0.0:8765`；如果端口被占用，`netcheck` 会自动切到下一个可用端口，并打印实际访问地址。
 
-```bash
-make dist
-```
+## 面板内容
 
-输出目录：
-
-- `dist/netcheck-linux-amd64`
-- `dist/netcheck-darwin-amd64`
-- `dist/netcheck-darwin-arm64`
-
-## 语言切换
-
-默认语言是英文。
-
-通过 CLI 使用简体中文：
-
-```bash
-./netcheck --lang zh-CN
-./netcheck ui --lang zh-CN
-./netcheck report --since 24h --output report.html --lang zh-CN
-```
-
-也可以使用环境变量：
-
-```bash
-NETCHECK_LANG=zh-CN ./netcheck
-```
-
-Web 面板右上角提供 `EN / 中文` 切换。动态 UI 模式下，请求会携带当前语言，表格标题、空态文案和 Codex 错误会随语言刷新。静态报表会内置翻译表，打开 HTML 后也可以在浏览器里切换语言。
-
-## 默认监控内容
-
-### 网关质量
-
-- 每秒 `ping` 一次默认网关
-- 统计 RTT、抖动、丢包率
-
-### 国内质量
-
-- 定期探测国内访问延迟
-- 定期做小流量下载测速
-- 统计失败率、平均值和分位值
-
-### 国外质量
-
-- 定期探测国外访问延迟
-- 默认延迟目标优先选择 `status.openai.com` 和 `status.claude.com`
-- 定期做国外下载测速，用于判断真实可用吞吐
-
-这样做的重点不是“跑满带宽”，而是优先判断真实办公体验是否退化，尤其是 AI coding 相关的国外访问是否稳定。
-
-### Codex 使用体验
-
-- 读取当前用户本机 Codex 日志，优先使用正在更新的 `~/.codex/logs*.sqlite`，兼容旧版 `~/.codex/log/codex-tui.log`
-- 重点统计模型采样请求、自动重试、timeout / DNS / TLS / 5xx 等网络错误；新版 Codex 日志以 `post sampling token usage` 作为采样请求分母，旧版日志回退到 WebSocket/stream close 打点
-- 在 Web 面板中生成独立时间轴，便于和上方网络连接测试时间轴对齐
-- 帮助区分“模型本身慢”和“网络让同一段 Codex 工作流变慢”
-- 工具调用、权限、会话记录和未知 WARN/ERROR 不混入网络异常时间轴
-- 当 UI 选择范围超过 `24h` 时，Codex 日志统计自动收敛到最近 `24h`
-
-## 常用命令
-
-### 默认模式：监控 + UI
-
-```bash
-./netcheck
-```
-
-### 仅运行监控
-
-```bash
-./netcheck monitor
-```
-
-### 仅启动 UI
-
-```bash
-./netcheck ui
-```
-
-### 导出静态报表
-
-```bash
-./netcheck report --since 24h --output report.html
-```
-
-也支持自定义时间范围：
-
-```bash
-./netcheck report --start 2026-04-10T09:00 --end 2026-04-10T18:00 --output report.html
-```
-
-### 导出默认配置
-
-```bash
-./netcheck init-config
-```
-
-### 清空数据库
-
-```bash
-./netcheck clear
-```
-
-## 数据存放位置
-
-默认使用系统用户配置目录。
-
-Linux 常见位置：
-
-- 配置：`~/.config/netcheck/config.json`
-- 数据库：`~/.config/netcheck/netcheck.sqlite`
-
-运行中的 SQLite 还可能生成：
-
-- `netcheck.sqlite-wal`
-- `netcheck.sqlite-shm`
-
-## 配置说明
-
-默认配置已经可以直接使用。只有在这些情况下才建议导出配置并修改：
-
-- 想替换默认的国内/国外探测目标
-- 想调整测速频率或下载采样大小
-- 想修改异常阈值
-
-导出后重新启动程序即可生效：
-
-```bash
-./netcheck init-config --force
-./netcheck
-```
-
-## 面板能看到什么
-
-- 网关、国内、国外三张汇总卡片
-- 各链路的延迟、下载、失败率趋势图
-- 当前时间范围内的异常次数和最长异常时长
-- 三条链路各自的异常累计时长
-- 最近 10 条异常事件时间轴
-- Codex 断流重试和网络错误稳定性面板
+- 网关 RTT、抖动和丢包率。
+- 国内、国外链路的延迟、下载速度和失败率。
+- 当前时间范围内的异常持续时间和最近网络事件。
+- Codex 断流重试、受影响 turn、网络错误候选和最大重试深度。
+- 对齐网络探针和 Codex 请求时间轴，帮助区分“模型本身慢”和“网络让同一段 Codex 工作流变慢”。
 
 ## License
 
