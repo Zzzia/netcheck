@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`netcheck` 是给 vibe coding 开发者使用的 Linux 优先网络质量面板，用来判断 Codex 变慢到底是模型、客户端，还是底层网络链路造成的。
+`netcheck` 是给 vibe coding 开发者使用的全平台网络质量面板，用来判断 Codex 变慢到底是模型、客户端，还是底层网络链路造成的。
 
 网络波动会直接放大 Codex 的交互耗时。把 Codex 开到 fast，不如先让网络质量变好；同样一次 vibe coding 任务，在网络差和网络正常的情况下，整体耗时可能相差一倍。`netcheck` 一边监控本机、国内、国外链路波动，一边直接读取 Codex 请求结果，让网页面板给出明确的网络质量评价，而不是只能靠“感觉慢”来判断。
 
@@ -19,7 +19,7 @@
 
 ## 快速开始
 
-在 Linux 上构建并启动：
+构建并启动：
 
 ```bash
 make build

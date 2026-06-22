@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-`netcheck` is a Linux-first network quality dashboard for vibe coding developers who need to know whether Codex feels slow because of the model, the client, or the network path underneath it.
+`netcheck` is a cross-platform network quality dashboard for vibe coding developers who need to know whether Codex feels slow because of the model, the client, or the network path underneath it.
 
 Network instability can dominate Codex latency. Switching Codex to a faster mode does not help much if requests keep stalling, reconnecting, or retrying; in a bad network, the same vibe coding task can take twice as long as it does on a healthy link. `netcheck` monitors local, domestic, and international network quality while also reading Codex request outcomes, so the web dashboard can give a concrete network-quality assessment for AI coding sessions instead of relying on vague “it feels slow” impressions.
 
@@ -19,7 +19,7 @@ Network instability can dominate Codex latency. Switching Codex to a faster mode
 
 ## Quick Start
 
-Build and run on Linux:
+Build and run:
 
 ```bash
 make build
