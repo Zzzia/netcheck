@@ -32,27 +32,38 @@
       padding: 28px 20px 48px;
     }
     .hero {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 16px;
-      flex-wrap: wrap;
-      align-items: end;
+      align-items: start;
       margin-bottom: 18px;
     }
     .hero h1 {
       margin: 0;
       font-size: 34px;
       letter-spacing: 0.02em;
+      line-height: 1.15;
     }
     .hero p {
-      margin: 8px 0 0;
+      margin: 0;
       color: var(--muted);
     }
-    .toolbar {
+    .hero-meta {
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
       align-items: center;
+      justify-content: flex-end;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding-top: 2px;
+    }
+    .hero-meta p {
+      white-space: nowrap;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 14px 12px;
+      align-items: start;
       margin-bottom: 18px;
       padding: 14px;
       background: rgba(255,253,248,0.9);
@@ -61,20 +72,23 @@
       box-shadow: 0 12px 40px rgba(31,41,55,0.06);
     }
     .toolbar strong {
-      margin-right: 4px;
+      padding: 8px 0;
+      white-space: nowrap;
     }
     .preset-group {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      flex: 1 1 auto;
+      min-width: 0;
     }
     .custom-range-group {
-      display: inline-flex;
+      grid-column: 2;
+      display: flex;
       align-items: center;
       gap: 8px;
-      flex: 0 0 auto;
-      margin-left: auto;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      font-size: 13px;
     }
     .toolbar button, .toolbar input {
       border: 1px solid rgba(38,70,83,0.18);
@@ -86,7 +100,11 @@
       white-space: nowrap;
     }
     .toolbar input {
-      min-width: 188px;
+      min-width: 0;
+    }
+    .custom-range-group input {
+      width: 172px;
+      padding-inline: 10px;
     }
     .toolbar button {
       cursor: pointer;
@@ -261,18 +279,28 @@
         grid-template-columns: 1fr;
       }
       .codex-title-row { display: block; }
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+      .toolbar strong,
       .custom-range-group {
-        width: 100%;
-        margin-left: 0;
+        grid-column: 1;
       }
     }
     @media (max-width: 640px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+      .hero-meta {
+        justify-content: flex-start;
+      }
       .custom-range-group {
         flex-wrap: wrap;
       }
       .custom-range-group input {
         flex: 1 1 170px;
         min-width: 0;
+        width: auto;
       }
     }
   </style>
@@ -283,7 +311,7 @@
       <div>
         <h1 data-i18n="ui.title">netcheck network dashboard</h1>
       </div>
-      <div>
+      <div class="hero-meta">
         <div class="language-switch" aria-label="Language">
           <button type="button" data-lang="en">EN</button>
           <button type="button" data-lang="zh-CN">中文</button>
