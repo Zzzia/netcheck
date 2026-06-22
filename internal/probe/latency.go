@@ -23,7 +23,7 @@ func TCPConnectOnce(ctx context.Context, target string, timeout time.Duration) L
 		return LatencyResult{
 			Target:  target,
 			Success: false,
-			Err:     fmt.Errorf("连接 %s 失败: %w", target, err),
+			Err:     fmt.Errorf("connect to %s failed: %w", target, err),
 		}
 	}
 	defer conn.Close()
@@ -40,7 +40,7 @@ func HTTPLatencyOnce(ctx context.Context, client *http.Client, targetURL string)
 		return LatencyResult{
 			Target:  targetURL,
 			Success: false,
-			Err:     fmt.Errorf("创建 HTTP 延迟请求失败: %w", err),
+			Err:     fmt.Errorf("create HTTP latency request failed: %w", err),
 		}
 	}
 	req.Header.Set("User-Agent", "netcheck/0.1")
@@ -51,7 +51,7 @@ func HTTPLatencyOnce(ctx context.Context, client *http.Client, targetURL string)
 		return LatencyResult{
 			Target:  targetURL,
 			Success: false,
-			Err:     fmt.Errorf("HTTP 延迟请求失败: %w", err),
+			Err:     fmt.Errorf("HTTP latency request failed: %w", err),
 		}
 	}
 	defer resp.Body.Close()
@@ -59,7 +59,7 @@ func HTTPLatencyOnce(ctx context.Context, client *http.Client, targetURL string)
 		return LatencyResult{
 			Target:  targetURL,
 			Success: false,
-			Err:     fmt.Errorf("HTTP 延迟返回状态码异常: %d", resp.StatusCode),
+			Err:     fmt.Errorf("HTTP latency returned unexpected status code: %d", resp.StatusCode),
 		}
 	}
 	return LatencyResult{

@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"netcheck/internal/config"
+	"netcheck/internal/i18n"
 	"netcheck/internal/monitor"
 	"netcheck/internal/report"
 )
@@ -20,29 +22,40 @@ import (
 const defaultUIAddr = "0.0.0.0:8765"
 
 func Run(args []string) error {
+	lang, filteredArgs, err := extractGlobalLang(args)
+	if err != nil {
+		return err
+	}
+	localizer := i18n.New(lang)
+	args = filteredArgs
 	if len(args) == 0 {
-		return runDefault()
+		return runDefaultForLang(localizer.Lang())
 	}
 	switch args[0] {
 	case "monitor":
-		return runMonitor(args[1:])
+		return runMonitorForLang(args[1:], localizer.Lang())
 	case "report":
-		return runReport(args[1:])
+		return runReportForLang(args[1:], localizer.Lang())
 	case "ui":
-		return runUI(args[1:])
+		return runUIForLang(args[1:], localizer.Lang())
 	case "clear":
-		return runClear(args[1:])
+		return runClearForLang(args[1:], localizer.Lang())
 	case "init-config":
-		return runInitConfig(args[1:])
+		return runInitConfigForLang(args[1:], localizer.Lang())
 	case "-h", "--help", "help":
-		printUsage()
+		printUsage(localizer)
 		return nil
 	default:
-		return fmt.Errorf("未知命令 %q", args[0])
+		return fmt.Errorf("%s %q", localizer.T("cli.unknown_command"), args[0])
 	}
 }
 
 func runDefault() error {
+	return runDefaultForLang(i18n.English)
+}
+
+func runDefaultForLang(lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	cfg, err := config.Load("")
 	if err != nil {
 		return err
@@ -52,11 +65,11 @@ func runDefault() error {
 
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- monitor.Run(ctx, cfg)
+		errCh <- monitor.RunForLang(ctx, cfg, localizer.Lang())
 	}()
 	go func() {
-		errCh <- report.Serve(ctx, cfg.DBPath, defaultUIAddr, func(actualAddr string) {
-			fmt.Println(buildUIReadyMessage(defaultUIAddr, actualAddr))
+		errCh <- report.ServeForLang(ctx, cfg.DBPath, defaultUIAddr, localizer.Lang(), func(actualAddr string) {
+			fmt.Println(buildUIReadyMessageForLang(defaultUIAddr, actualAddr, localizer.Lang()))
 		})
 	}()
 
@@ -73,9 +86,14 @@ func runDefault() error {
 }
 
 func runMonitor(args []string) error {
+	return runMonitorForLang(args, i18n.English)
+}
+
+func runMonitorForLang(args []string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	fs := flag.NewFlagSet("monitor", flag.ContinueOnError)
-	configPath := fs.String("config", "", "配置文件路径")
-	duration := fs.Duration("duration", 0, "运行时长，默认持续运行直到收到退出信号")
+	configPath := fs.String("config", "", localizer.T("cli.flag.config"))
+	duration := fs.Duration("duration", 0, localizer.T("cli.flag.duration"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -90,16 +108,21 @@ func runMonitor(args []string) error {
 		ctx, innerCancel = context.WithTimeout(ctx, *duration)
 		defer innerCancel()
 	}
-	return monitor.Run(ctx, cfg)
+	return monitor.RunForLang(ctx, cfg, localizer.Lang())
 }
 
 func runReport(args []string) error {
+	return runReportForLang(args, i18n.English)
+}
+
+func runReportForLang(args []string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
-	configPath := fs.String("config", "", "配置文件路径")
-	since := fs.String("since", "24h", "时间范围，例如 24h、7d")
-	startRaw := fs.String("start", "", "开始时间，支持 RFC3339 或 2006-01-02T15:04")
-	endRaw := fs.String("end", "", "结束时间，支持 RFC3339 或 2006-01-02T15:04")
-	output := fs.String("output", "report.html", "报表输出路径")
+	configPath := fs.String("config", "", localizer.T("cli.flag.config"))
+	since := fs.String("since", "24h", localizer.T("cli.flag.since"))
+	startRaw := fs.String("start", "", localizer.T("cli.flag.start"))
+	endRaw := fs.String("end", "", localizer.T("cli.flag.end"))
+	output := fs.String("output", "report.html", localizer.T("cli.flag.output"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -107,20 +130,25 @@ func runReport(args []string) error {
 	if err != nil {
 		return err
 	}
-	start, end, err := resolveReportRange(*since, *startRaw, *endRaw)
+	start, end, err := resolveReportRangeForLang(*since, *startRaw, *endRaw, localizer.Lang())
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(*output), 0o755); err != nil && !errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("创建报表目录失败: %w", err)
+		return fmt.Errorf(localizer.T("cli.error.create_report_dir"), err)
 	}
-	return report.Generate(cfg.DBPath, start, end, *output)
+	return report.GenerateForLang(cfg.DBPath, start, end, *output, localizer.Lang())
 }
 
 func runUI(args []string) error {
+	return runUIForLang(args, i18n.English)
+}
+
+func runUIForLang(args []string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	fs := flag.NewFlagSet("ui", flag.ContinueOnError)
-	configPath := fs.String("config", "", "配置文件路径")
-	addr := fs.String("addr", defaultUIAddr, "监听地址")
+	configPath := fs.String("config", "", localizer.T("cli.flag.config"))
+	addr := fs.String("addr", defaultUIAddr, localizer.T("cli.flag.addr"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -130,15 +158,20 @@ func runUI(args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return report.Serve(ctx, cfg.DBPath, *addr, func(actualAddr string) {
-		fmt.Println(buildUIReadyMessage(*addr, actualAddr))
+	return report.ServeForLang(ctx, cfg.DBPath, *addr, localizer.Lang(), func(actualAddr string) {
+		fmt.Println(buildUIReadyMessageForLang(*addr, actualAddr, localizer.Lang()))
 	})
 }
 
 func runInitConfig(args []string) error {
+	return runInitConfigForLang(args, i18n.English)
+}
+
+func runInitConfigForLang(args []string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	fs := flag.NewFlagSet("init-config", flag.ContinueOnError)
-	output := fs.String("output", "", "配置输出路径")
-	force := fs.Bool("force", false, "覆盖已有配置")
+	output := fs.String("output", "", localizer.T("cli.flag.output"))
+	force := fs.Bool("force", false, localizer.T("cli.flag.force"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -153,34 +186,44 @@ func runInitConfig(args []string) error {
 			return err
 		}
 	}
-	fmt.Printf("已写入默认配置: %s\n", path)
+	fmt.Printf(localizer.T("cli.config_written"), path)
 	return nil
 }
 
 func parseSince(raw string) (time.Duration, error) {
+	return parseSinceForLang(raw, i18n.English)
+}
+
+func parseSinceForLang(raw string, lang i18n.Lang) (time.Duration, error) {
+	localizer := i18n.New(lang)
 	if raw == "" {
 		return 24 * time.Hour, nil
 	}
 	if raw[len(raw)-1] == 'd' {
 		var days int
 		if _, err := fmt.Sscanf(raw, "%dd", &days); err != nil || days <= 0 {
-			return 0, fmt.Errorf("无法解析 since 参数: %s", raw)
+			return 0, fmt.Errorf(localizer.T("cli.error.invalid_since"), raw)
 		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
 	duration, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("无法解析 since 参数: %w", err)
+		return 0, fmt.Errorf(localizer.T("cli.error.invalid_since_duration"), err)
 	}
 	if duration <= 0 {
-		return 0, fmt.Errorf("since 参数必须大于 0")
+		return 0, errors.New(localizer.T("cli.error.positive_since"))
 	}
 	return duration, nil
 }
 
 func resolveReportRange(sinceRaw, startRaw, endRaw string) (time.Time, time.Time, error) {
+	return resolveReportRangeForLang(sinceRaw, startRaw, endRaw, i18n.English)
+}
+
+func resolveReportRangeForLang(sinceRaw, startRaw, endRaw string, lang i18n.Lang) (time.Time, time.Time, error) {
+	localizer := i18n.New(lang)
 	if startRaw == "" && endRaw == "" {
-		window, err := parseSince(sinceRaw)
+		window, err := parseSinceForLang(sinceRaw, localizer.Lang())
 		if err != nil {
 			return time.Time{}, time.Time{}, err
 		}
@@ -188,23 +231,28 @@ func resolveReportRange(sinceRaw, startRaw, endRaw string) (time.Time, time.Time
 		return end.Add(-window), end, nil
 	}
 	if startRaw == "" || endRaw == "" {
-		return time.Time{}, time.Time{}, fmt.Errorf("使用自定义时间时，必须同时提供 --start 和 --end")
+		return time.Time{}, time.Time{}, errors.New(localizer.T("cli.error.custom_range_pair"))
 	}
-	start, err := parseAbsoluteTime(startRaw)
+	start, err := parseAbsoluteTimeForLang(startRaw, localizer.Lang())
 	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("解析开始时间失败: %w", err)
+		return time.Time{}, time.Time{}, fmt.Errorf(localizer.T("cli.error.parse_start"), err)
 	}
-	end, err := parseAbsoluteTime(endRaw)
+	end, err := parseAbsoluteTimeForLang(endRaw, localizer.Lang())
 	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("解析结束时间失败: %w", err)
+		return time.Time{}, time.Time{}, fmt.Errorf(localizer.T("cli.error.parse_end"), err)
 	}
 	if end.Before(start) {
-		return time.Time{}, time.Time{}, fmt.Errorf("结束时间不能早于开始时间")
+		return time.Time{}, time.Time{}, errors.New(localizer.T("cli.error.end_before_start"))
 	}
 	return start, end, nil
 }
 
 func parseAbsoluteTime(raw string) (time.Time, error) {
+	return parseAbsoluteTimeForLang(raw, i18n.English)
+}
+
+func parseAbsoluteTimeForLang(raw string, lang i18n.Lang) (time.Time, error) {
+	localizer := i18n.New(lang)
 	layouts := []string{
 		time.RFC3339,
 		"2006-01-02T15:04",
@@ -216,35 +264,34 @@ func parseAbsoluteTime(raw string) (time.Time, error) {
 			return value, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("不支持的时间格式: %s", raw)
+	return time.Time{}, fmt.Errorf(localizer.T("cli.error.unsupported_time_format"), raw)
 }
 
-func printUsage() {
-	fmt.Println(`netcheck 用法:
-
-  netcheck monitor [--config path] [--duration 5m]
-  netcheck report [--config path] [--since 24h] [--start 2026-04-10T09:00 --end 2026-04-10T18:00] [--output report.html]
-  netcheck ui [--config path] [--addr 0.0.0.0:8765]
-  netcheck clear [--config path]
-  netcheck init-config [--output path] [--force]`)
+func printUsage(localizer i18n.Localizer) {
+	fmt.Println(localizer.T("app.usage"))
 }
 
 func buildUIReadyMessage(requestedAddr, actualAddr string) string {
+	return buildUIReadyMessageForLang(requestedAddr, actualAddr, i18n.English)
+}
+
+func buildUIReadyMessageForLang(requestedAddr, actualAddr string, lang i18n.Lang) string {
+	localizer := i18n.New(lang)
 	requestedDisplay := normalizeAnnounceAddr(requestedAddr)
 	actualDisplay := normalizeAnnounceAddr(actualAddr)
 	localAccessURL := buildLocalAccessURL(actualDisplay)
 
 	if requestedDisplay == actualDisplay {
 		if localAccessURL == "" {
-			return fmt.Sprintf("netcheck UI 已启动，监听地址: %s", actualDisplay)
+			return fmt.Sprintf(localizer.T("cli.ui_ready"), actualDisplay)
 		}
-		return fmt.Sprintf("netcheck UI 已启动，监听地址: %s，本机访问: %s", actualDisplay, localAccessURL)
+		return fmt.Sprintf(localizer.T("cli.ui_ready_local"), actualDisplay, localAccessURL)
 	}
 	if localAccessURL == "" {
-		return fmt.Sprintf("netcheck UI 已启动，默认监听地址 %s 已被占用，已切换到: %s", requestedDisplay, actualDisplay)
+		return fmt.Sprintf(localizer.T("cli.ui_port_changed"), requestedDisplay, actualDisplay)
 	}
 	return fmt.Sprintf(
-		"netcheck UI 已启动，默认监听地址 %s 已被占用，已切换到: %s，本机访问: %s",
+		localizer.T("cli.ui_port_changed_local"),
 		requestedDisplay,
 		actualDisplay,
 		localAccessURL,
@@ -275,4 +322,26 @@ func buildLocalAccessURL(addr string) string {
 	default:
 		return fmt.Sprintf("http://%s", net.JoinHostPort(host, port))
 	}
+}
+
+func extractGlobalLang(args []string) (i18n.Lang, []string, error) {
+	lang := i18n.FromEnv()
+	filtered := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--lang" {
+			if index+1 >= len(args) {
+				return lang, nil, errors.New(i18n.New(lang).T("cli.error.missing_lang_value"))
+			}
+			lang = i18n.Parse(args[index+1])
+			index++
+			continue
+		}
+		if strings.HasPrefix(arg, "--lang=") {
+			lang = i18n.Parse(strings.TrimPrefix(arg, "--lang="))
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return lang, filtered, nil
 }

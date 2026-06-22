@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>netcheck 网络质量面板</title>
+  <link rel="icon" href="data:,">
+  <title>netcheck network dashboard</title>
   <style>
     :root {
       --bg: #f4f1ea;
@@ -87,9 +88,31 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .language-switch {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid rgba(38,70,83,0.18);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.7);
+    }
+    .language-switch button {
+      border: 0;
+      border-radius: 9px;
+      padding: 6px 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+    }
+    .language-switch button.active {
+      background: var(--accent);
+      color: white;
+    }
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
       gap: 14px;
       margin-bottom: 20px;
     }
@@ -106,13 +129,13 @@
       margin: 0 0 12px;
       font-size: 18px;
     }
-    .metric-list { display: grid; grid-template-columns: repeat(var(--metric-columns, 3), minmax(0, 1fr)); gap: 10px 12px; }
+    .metric-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr)); gap: 12px 16px; }
     .metric-entry { min-width: 0; }
     .metric-label { color: var(--ink); font-size: 13px; font-weight: 600; margin-bottom: 6px; line-height: 1.25; }
     .metric-stack { display: grid; gap: 4px; min-width: 0; }
-    .metric-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-    .metric-value { font-size: 15px; font-weight: 700; min-width: 0; line-height: 1.2; }
-    .metric-tag { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 999px; background: rgba(38,70,83,0.08); color: var(--muted); font-size: 10px; line-height: 1.2; white-space: nowrap; }
+    .metric-row { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+    .metric-value { font-size: 15px; font-weight: 700; min-width: 0; line-height: 1.2; white-space: nowrap; }
+    .metric-tag { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 2px 6px; border-radius: 999px; background: rgba(38,70,83,0.08); color: var(--muted); font-size: 10px; line-height: 1.2; white-space: nowrap; }
     .meta { display: grid; grid-template-columns: 220px 1fr; gap: 14px; margin-bottom: 20px; }
     .panel { padding: 16px; }
     .panel h3 { margin: 0 0 10px; font-size: 18px; }
@@ -233,36 +256,40 @@
   <div class="page">
     <section class="hero">
       <div>
-        <h1>netcheck 网络质量面板</h1>
+        <h1 data-i18n="ui.title">netcheck network dashboard</h1>
       </div>
       <div>
+        <div class="language-switch" aria-label="Language">
+          <button type="button" data-lang="en">EN</button>
+          <button type="button" data-lang="zh-CN">中文</button>
+        </div>
         <p id="generated-at"></p>
       </div>
     </section>
 
     <section class="toolbar">
-      <strong>时间范围</strong>
+      <strong data-i18n="ui.range">Time range</strong>
       <div class="preset-group">
-        <button data-range="30m">最近 30 分钟</button>
-        <button data-range="1h">最近 1 小时</button>
-        <button data-range="6h">最近 6 小时</button>
-        <button data-range="24h">最近 24 小时</button>
-        <button data-range="7d">最近 7 天</button>
+        <button data-range="30m" data-i18n="ui.range.30m">Last 30 minutes</button>
+        <button data-range="1h" data-i18n="ui.range.1h">Last 1 hour</button>
+        <button data-range="6h" data-i18n="ui.range.6h">Last 6 hours</button>
+        <button data-range="24h" data-i18n="ui.range.24h">Last 24 hours</button>
+        <button data-range="7d" data-i18n="ui.range.7d">Last 7 days</button>
       </div>
       <input id="start-input" type="datetime-local">
       <input id="end-input" type="datetime-local">
-      <button id="apply-custom">应用自定义范围</button>
+      <button id="apply-custom" data-i18n="ui.apply_custom">Apply custom range</button>
     </section>
 
     <section class="summary-grid" id="summary-grid"></section>
 
     <section class="meta">
       <div class="panel">
-        <h3>异常概览</h3>
+        <h3 data-i18n="ui.incident_overview">Incident overview</h3>
         <div id="event-meta"></div>
       </div>
       <div class="panel">
-        <h3>链路异常统计</h3>
+        <h3 data-i18n="ui.link_incidents">Link incident totals</h3>
         <div id="cause-table"></div>
       </div>
     </section>
@@ -272,7 +299,7 @@
     <section class="codex-section" id="codex-section"></section>
 
     <section class="panel">
-      <h3>事件时间轴（最近 10 条）</h3>
+      <h3 data-i18n="ui.event_timeline">Event timeline (latest 10)</h3>
       <div id="event-table"></div>
     </section>
   </div>
@@ -281,7 +308,9 @@
     window.reportConfig = {
       liveMode: {{if .LiveMode}}true{{else}}false{{end}},
       initialPayload: {{.InitialJSON}},
-      defaultRange: "{{.DefaultMode}}"
+      defaultRange: "{{.DefaultMode}}",
+      initialLang: "{{.Lang}}",
+      translations: {{.Translations}}
     };
   </script>
   <script>

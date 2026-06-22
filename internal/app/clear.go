@@ -7,11 +7,17 @@ import (
 	"os"
 
 	"netcheck/internal/config"
+	"netcheck/internal/i18n"
 )
 
 func runClear(args []string) error {
+	return runClearForLang(args, i18n.English)
+}
+
+func runClearForLang(args []string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	fs := flag.NewFlagSet("clear", flag.ContinueOnError)
-	configPath := fs.String("config", "", "配置文件路径")
+	configPath := fs.String("config", "", localizer.T("cli.flag.config"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -24,10 +30,10 @@ func runClear(args []string) error {
 		return err
 	}
 	if removedFiles == 0 {
-		fmt.Printf("数据库文件不存在，无需清理: %s\n", cfg.DBPath)
+		fmt.Printf(localizer.T("clear.no_database"), cfg.DBPath)
 		return nil
 	}
-	fmt.Printf("已清理数据库文件 %d 个: %s\n", removedFiles, cfg.DBPath)
+	fmt.Printf(localizer.T("clear.removed"), removedFiles, cfg.DBPath)
 	return nil
 }
 
@@ -43,7 +49,7 @@ func clearDatabaseFiles(dbPath string) (int, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return removedFiles, fmt.Errorf("删除数据库文件失败 %s: %w", path, err)
+			return removedFiles, fmt.Errorf("remove database file %s failed: %w", path, err)
 		}
 		removedFiles++
 	}

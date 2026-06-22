@@ -3,6 +3,8 @@ package report
 import (
 	"sort"
 	"strings"
+
+	"netcheck/internal/i18n"
 )
 
 func isNetworkCodexKind(kind string) bool {
@@ -10,23 +12,25 @@ func isNetworkCodexKind(kind string) bool {
 }
 
 func (r *codexParseResult) addOtherEvent(item codexParsedLine, class codexLineClass) {
-	key := class.kind + "|" + item.level + "|" + codexOtherName(item, class)
+	nameKey := codexOtherNameKey(item, class)
+	key := class.kind + "|" + item.level + "|" + nameKey
 	row := r.other[key]
 	if row == nil {
 		row = &codexIssueRow{
-			Kind:   class.kind,
-			Level:  item.level,
-			Name:   codexOtherName(item, class),
-			Sample: item.message,
+			Kind:    class.kind,
+			Level:   item.level,
+			NameKey: nameKey,
+			Sample:  item.message,
 		}
 		r.other[key] = row
 	}
 	row.Count++
 }
 
-func (r *codexParseResult) otherRows() []codexIssueRow {
+func (r *codexParseResult) otherRows(localizer i18n.Localizer) []codexIssueRow {
 	rows := make([]codexIssueRow, 0, len(r.other))
 	for _, row := range r.other {
+		row.Name = codexOtherName(row.NameKey, localizer)
 		rows = append(rows, *row)
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -38,13 +42,20 @@ func (r *codexParseResult) otherRows() []codexIssueRow {
 	return rows
 }
 
-func codexOtherName(item codexParsedLine, class codexLineClass) string {
+func codexOtherNameKey(item codexParsedLine, class codexLineClass) string {
 	switch class.kind {
 	case "unknown_warning", "unknown_error":
 		return compactUnknownCodexMessage(item.message)
 	default:
-		return class.label
+		return class.labelKey
 	}
+}
+
+func codexOtherName(key string, localizer i18n.Localizer) string {
+	if strings.HasPrefix(key, "codex.") {
+		return localizer.T(key)
+	}
+	return key
 }
 
 func compactUnknownCodexMessage(message string) string {

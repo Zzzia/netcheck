@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"netcheck/internal/i18n"
 	"netcheck/internal/model"
 )
 
@@ -120,9 +121,9 @@ func jitter(values []float64) float64 {
 	return total / float64(len(values)-1)
 }
 
-func formatMetric(value float64, unit string) string {
+func formatMetric(value float64, unit string, localizer i18n.Localizer) string {
 	if value == 0 {
-		return "无数据"
+		return localizer.T("common.no_data")
 	}
 	if unit == "Mbps" {
 		return fmt.Sprintf("%.2f %s", value, unit)
@@ -158,20 +159,24 @@ func formatDuration(seconds int64) string {
 	return duration.String()
 }
 
-func causeName(raw string) string {
+func causeName(raw string, localizer i18n.Localizer) string {
+	return localizer.T(causeNameKey(raw))
+}
+
+func causeNameKey(raw string) string {
 	switch raw {
 	case "root_cause":
-		return "归因"
+		return "cause.root"
 	case "local":
-		return "本地链路"
+		return "cause.local"
 	case "domestic":
-		return "国内链路"
+		return "cause.domestic"
 	case "international":
-		return "国外链路"
+		return "cause.international"
 	case "global":
-		return "全局异常"
+		return "cause.global"
 	case "degraded":
-		return "异常"
+		return "cause.degraded"
 	default:
 		return raw
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"netcheck/internal/config"
+	"netcheck/internal/i18n"
 	"netcheck/internal/model"
 	"netcheck/internal/probe"
 	"netcheck/internal/storage"
@@ -22,13 +23,18 @@ type monitorSample struct {
 }
 
 func Run(ctx context.Context, cfg config.Config) error {
+	return RunForLang(ctx, cfg, i18n.English)
+}
+
+func RunForLang(ctx context.Context, cfg config.Config, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
 	store, err := storage.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 
-	if err := printStartupSummary(cfg); err != nil {
+	if err := printStartupSummary(cfg, localizer); err != nil {
 		return err
 	}
 
@@ -79,8 +85,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 	})
 	startRemoteLatencyTask(ctx, cfg.Sampling.DomesticLatencyIntervalSec, cfg.Targets.DomesticLatency, "domestic", cfg, sampleCh)
 	startRemoteLatencyTask(ctx, cfg.Sampling.InternationalLatencySeconds, cfg.Targets.InternationalLatency, "international", cfg, sampleCh)
-	startDownloadTask(ctx, 5*time.Second, cfg.Sampling.DomesticDownloadIntervalSec, cfg.Targets.DomesticDownloads, "domestic", cfg.Sampling.DomesticDownloadBytes, httpClient, sampleCh)
-	startDownloadTask(ctx, 45*time.Second, cfg.Sampling.InternationalDownloadSec, cfg.Targets.InternationalDownloads, "international", cfg.Sampling.InternationalDownloadBytes, httpClient, sampleCh)
+	startDownloadTask(ctx, 5*time.Second, cfg.Sampling.DomesticDownloadIntervalSec, cfg.Targets.DomesticDownloads, "domestic", cfg.Sampling.DomesticDownloadBytes, httpClient, sampleCh, localizer)
+	startDownloadTask(ctx, 45*time.Second, cfg.Sampling.InternationalDownloadSec, cfg.Targets.InternationalDownloads, "international", cfg.Sampling.InternationalDownloadBytes, httpClient, sampleCh, localizer)
 
 	trackers := map[string]*stateTracker{
 		"local":         trackerPtr(newTracker(cfg)),
@@ -110,7 +116,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			}
 			return nil
 		case err := <-errCh:
-			fmt.Printf("[%s] 背景错误: %v\n", time.Now().Format(time.RFC3339), err)
+			fmt.Printf(localizer.T("monitor.background_error"), time.Now().Format(time.RFC3339), err)
 		case item := <-sampleCh:
 			if err := store.InsertSample(item.sample); err != nil {
 				return err
@@ -118,7 +124,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			stateWindows.add(item.sample)
 			if shouldEvaluateLayer(item.sample.Layer, item.sample.Timestamp, lastEvaluated, cfg) {
 				lastEvaluated[item.sample.Layer] = item.sample.Timestamp
-				snapshots := stateWindows.evaluate(cfg, item.sample.Timestamp)
+				snapshots := stateWindows.evaluateForLang(cfg, item.sample.Timestamp, localizer)
 				snapshot := snapshots[item.sample.Layer]
 				change := trackers[item.sample.Layer].step(item.sample.Layer, snapshot)
 				if change.Started {
@@ -128,7 +134,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 					}
 					trackers[item.sample.Layer].eventID = eventID
 					if cfg.Alerts.PrintStateChanges {
-						fmt.Printf("[%s] 异常开始 [%s] %s (%s)\n", change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer), change.Summary, safeEvidence(change.Evidence))
+						fmt.Printf(localizer.T("monitor.degraded_start"), change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer, localizer), change.Summary, safeEvidence(change.Evidence, localizer))
 					}
 				}
 				if change.Resolved {
@@ -139,7 +145,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 					}
 					trackers[item.sample.Layer].eventID = 0
 					if cfg.Alerts.PrintStateChanges {
-						fmt.Printf("[%s] 异常恢复 [%s] %s\n", change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer), change.Summary)
+						fmt.Printf(localizer.T("monitor.degraded_resolved"), change.Timestamp.Format(time.RFC3339), layerDisplayName(item.sample.Layer, localizer), change.Summary)
 					}
 				}
 			}
@@ -208,11 +214,12 @@ func startDownloadTask(
 	sampleBytes int64,
 	client *http.Client,
 	sampleCh chan<- monitorSample,
+	localizer i18n.Localizer,
 ) {
 	startTaskWithDelay(ctx, initialDelay, time.Duration(intervalSec)*time.Second, func(taskCtx context.Context) {
 		for _, target := range targets {
 			result := probe.DownloadOnce(taskCtx, client, target.URL, sampleBytes)
-			printDownloadResult(layer, result)
+			printDownloadResult(layer, result, localizer)
 			emitSample(taskCtx, sampleCh, model.Sample{
 				Timestamp: time.Now(),
 				Layer:     layer,
@@ -274,16 +281,16 @@ func startTaskWithDelay(ctx context.Context, initialDelay, interval time.Duratio
 	}()
 }
 
-func printStartupSummary(cfg config.Config) error {
+func printStartupSummary(cfg config.Config, localizer i18n.Localizer) error {
 	domesticBudgetMB := float64(cfg.Sampling.DomesticDownloadBytes*int64((24*time.Hour)/(time.Duration(cfg.Sampling.DomesticDownloadIntervalSec)*time.Second))*int64(len(cfg.Targets.DomesticDownloads))) / 1024.0 / 1024.0
 	internationalBudgetMB := float64(cfg.Sampling.InternationalDownloadBytes*int64((24*time.Hour)/(time.Duration(cfg.Sampling.InternationalDownloadSec)*time.Second))*int64(len(cfg.Targets.InternationalDownloads))) / 1024.0 / 1024.0
-	fmt.Printf("netcheck 已启动，数据库: %s\n", cfg.DBPath)
-	fmt.Printf("网关采样: %ds 一次，国内下载: %ds 一次，国外下载: %ds 一次\n",
+	fmt.Printf(localizer.T("monitor.started"), cfg.DBPath)
+	fmt.Printf(localizer.T("monitor.sampling"),
 		cfg.Sampling.GatewayIntervalSec,
 		cfg.Sampling.DomesticDownloadIntervalSec,
 		cfg.Sampling.InternationalDownloadSec,
 	)
-	fmt.Printf("估算日下载流量: 国内 %.1fMB，国外 %.1fMB\n", domesticBudgetMB, internationalBudgetMB)
+	fmt.Printf(localizer.T("monitor.download_budget"), domesticBudgetMB, internationalBudgetMB)
 	return nil
 }
 
@@ -298,9 +305,9 @@ func trackerPtr(value stateTracker) *stateTracker {
 	return &value
 }
 
-func safeEvidence(value string) string {
+func safeEvidence(value string, localizer i18n.Localizer) string {
 	if strings.TrimSpace(value) == "" {
-		return "无额外证据"
+		return localizer.T("monitor.no_evidence")
 	}
 	return value
 }
@@ -347,15 +354,12 @@ func minDuration(a, b time.Duration) time.Duration {
 	return b
 }
 
-func printDownloadResult(layer string, result probe.DownloadResult) {
-	label := "国内"
-	if layer == "international" {
-		label = "国外"
-	}
+func printDownloadResult(layer string, result probe.DownloadResult, localizer i18n.Localizer) {
+	label := layerDisplayName(layer, localizer)
 	now := time.Now().Format(time.RFC3339)
 	if !result.Success {
-		fmt.Printf("[%s] 测速 [%s] 失败: %s\n", now, label, errString(result.Err))
+		fmt.Printf(localizer.T("monitor.speedtest_failed"), now, label, errString(result.Err))
 		return
 	}
-	fmt.Printf("[%s] 测速 [%s] %.2f Mbps\n", now, label, result.ThroughputMbps)
+	fmt.Printf(localizer.T("monitor.speedtest"), now, label, result.ThroughputMbps)
 }

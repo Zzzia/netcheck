@@ -6,12 +6,19 @@ import (
 	"strings"
 	"time"
 
+	"netcheck/internal/i18n"
+
 	_ "modernc.org/sqlite"
 )
 
 const maxCodexSQLiteRows = 200000
 
 func buildCodexReportFromSQLite(dbPath string, start, end time.Time) codexReport {
+	return buildCodexReportFromSQLiteForLang(dbPath, start, end, i18n.English)
+}
+
+func buildCodexReportFromSQLiteForLang(dbPath string, start, end time.Time, lang i18n.Lang) codexReport {
+	localizer := i18n.New(lang)
 	codexStart := start
 	clamped := false
 	if end.Sub(start) > maxCodexWindow {
@@ -27,17 +34,17 @@ func buildCodexReportFromSQLite(dbPath string, start, end time.Time) codexReport
 	}
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)", dbPath))
 	if err != nil {
-		report.Error = fmt.Sprintf("打开 Codex SQLite 日志失败: %v", err)
+		report.Error = fmt.Sprintf("open Codex SQLite log failed: %v", err)
 		return report
 	}
 	defer db.Close()
 
 	parsed, err := parseCodexSQLiteRows(db, codexStart, end)
 	if err != nil {
-		report.Error = fmt.Sprintf("读取 Codex SQLite 日志失败: %v", err)
+		report.Error = fmt.Sprintf("read Codex SQLite log failed: %v", err)
 		return report
 	}
-	return parsed.finalize(report, codexStart, end)
+	return parsed.finalizeForLang(report, codexStart, end, localizer)
 }
 
 func parseCodexSQLiteRows(db *sql.DB, start, end time.Time) (codexParseResult, error) {

@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"os"
 	"time"
+
+	"netcheck/internal/i18n"
 )
 
 //go:embed report.html.tmpl
@@ -20,51 +22,66 @@ var reportScript string
 var codexScript string
 
 func Generate(dbPath string, start, end time.Time, output string) error {
-	payload, err := LoadData(dbPath, start, end)
+	return GenerateForLang(dbPath, start, end, output, i18n.English)
+}
+
+func GenerateForLang(dbPath string, start, end time.Time, output string, lang i18n.Lang) error {
+	localizer := i18n.New(lang)
+	payload, err := LoadDataForLang(dbPath, start, end, localizer.Lang())
 	if err != nil {
 		return err
 	}
-	codex := buildCodexReport(start, end)
+	codex := buildCodexReportForLang(start, end, localizer.Lang())
 	payload.Codex = &codex
 	return writePage(output, templatePageData{
 		LiveMode:     false,
 		InitialJSON:  mustJSON(payload),
 		DefaultMode:  "static",
+		Lang:         localizer.Code(),
+		Translations: template.JS(i18n.MessagesJSON()),
 		ReportScript: template.JS(reportScript),
 		CodexScript:  template.JS(codexScript),
 	})
 }
 
 func RenderLivePage() ([]byte, error) {
+	return RenderLivePageForLang(i18n.English)
+}
+
+func RenderLivePageForLang(lang i18n.Lang) ([]byte, error) {
+	localizer := i18n.New(lang)
 	tmpl, err := template.New("report").Parse(reportTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("解析报表模板失败: %w", err)
+		return nil, fmt.Errorf(localizer.T("report.error.parse_template"), err)
 	}
 	var builder bytes.Buffer
 	if err := tmpl.Execute(&builder, templatePageData{
 		LiveMode:     true,
 		InitialJSON:  template.JS("null"),
 		DefaultMode:  "1h",
+		Lang:         localizer.Code(),
+		Translations: template.JS(i18n.MessagesJSON()),
 		ReportScript: template.JS(reportScript),
 		CodexScript:  template.JS(codexScript),
 	}); err != nil {
-		return nil, fmt.Errorf("渲染动态页面失败: %w", err)
+		return nil, fmt.Errorf(localizer.T("report.error.render_live"), err)
 	}
 	return builder.Bytes(), nil
 }
 
 func writePage(output string, page templatePageData) error {
+	localizer := i18n.New(i18n.Parse(page.Lang))
 	tmpl, err := template.New("report").Parse(reportTemplate)
 	if err != nil {
-		return fmt.Errorf("解析报表模板失败: %w", err)
+		return fmt.Errorf(localizer.T("report.error.parse_template"), err)
 	}
 	file, err := os.Create(output)
 	if err != nil {
-		return fmt.Errorf("创建报表文件失败: %w", err)
+		return fmt.Errorf(localizer.T("report.error.create_file"), err)
 	}
 	defer file.Close()
 	if err := tmpl.Execute(file, page); err != nil {
-		return fmt.Errorf("渲染报表失败: %w", err)
+		return fmt.Errorf(localizer.T("report.error.render_file"), err)
 	}
 	return nil
 }

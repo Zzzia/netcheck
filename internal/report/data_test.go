@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"netcheck/internal/i18n"
 	"netcheck/internal/model"
 )
 
@@ -20,7 +21,7 @@ func TestBuildSummaryCardsUsesLowerTailForDownload(t *testing.T) {
 	if len(cards) < 2 {
 		t.Fatalf("摘要卡片数量不足: %d", len(cards))
 	}
-	if got := cards[1].Metrics[1].Label; got != "下载" {
+	if got := cards[1].Metrics[1].Label; got != "Download" {
 		t.Fatalf("期望第二个指标为下载，实际为 %s", got)
 	}
 	if len(cards[1].Metrics[1].Lines) != 2 {
@@ -87,14 +88,48 @@ func TestBuildEventRowsDisplaysClippedWindowTimes(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("期望显示跨窗口事件，实际为 %#v", rows)
 	}
-	if rows[0].StartedAt != base.Format("2006-01-02 15:04:05")+"（窗口前开始）" {
+	if rows[0].StartedAt != base.Format("2006-01-02 15:04:05")+" (started before window)" {
 		t.Fatalf("开始时间应显示窗口内起点，实际为 %s", rows[0].StartedAt)
 	}
-	if rows[0].EndedAt != windowEnd.Format("2006-01-02 15:04:05")+"（窗口后结束）" {
+	if rows[0].EndedAt != windowEnd.Format("2006-01-02 15:04:05")+" (ends after window)" {
 		t.Fatalf("结束时间应显示窗口内终点，实际为 %s", rows[0].EndedAt)
 	}
 	if rows[0].Duration != "1.0h" {
 		t.Fatalf("持续时间应按窗口内时长展示，实际为 %s", rows[0].Duration)
+	}
+}
+
+func TestBuildEventRowsNormalizesStoredMonitorTextByLanguage(t *testing.T) {
+	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
+	endedAt := base.Add(time.Minute)
+	events := []model.Event{
+		{
+			Name:      "domestic",
+			Status:    "degraded",
+			Summary:   "国内 延迟 avg=187.5ms 失败率=0% dl=5.13Mbps",
+			Evidence:  "平均延迟 187.5ms > 180.0ms；平均下载速率 5.13Mbps < 10.00Mbps",
+			StartedAt: base,
+			EndedAt:   &endedAt,
+		},
+	}
+
+	englishRows := buildEventRows(events, base, base.Add(time.Hour))
+	if len(englishRows) != 1 {
+		t.Fatalf("期望生成 1 条事件，实际为 %#v", englishRows)
+	}
+	if englishRows[0].Summary != "Domestic latency avg=187.5ms failure=0% dl=5.13Mbps" {
+		t.Fatalf("默认英文应归一化历史中文摘要，实际为 %s", englishRows[0].Summary)
+	}
+	if englishRows[0].Evidence != "average latency 187.5ms > 180.0ms; average download 5.13Mbps < 10.00Mbps" {
+		t.Fatalf("默认英文应归一化历史中文证据，实际为 %s", englishRows[0].Evidence)
+	}
+
+	chineseRows := buildEventRowsForLang(events, base, base.Add(time.Hour), i18n.New(i18n.Chinese))
+	if chineseRows[0].Summary != "国内 延迟 avg=187.5ms 失败率=0% dl=5.13Mbps" {
+		t.Fatalf("中文模式应保留中文摘要，实际为 %s", chineseRows[0].Summary)
+	}
+	if chineseRows[0].Evidence != "平均延迟 187.5ms > 180.0ms；平均下载速率 5.13Mbps < 10.00Mbps" {
+		t.Fatalf("中文模式应保留中文证据，实际为 %s", chineseRows[0].Evidence)
 	}
 }
 
@@ -119,7 +154,7 @@ func TestBuildCauseRowsOnlyCountsThreeLinks(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("期望只统计三个链路事件，实际为 %d", len(rows))
 	}
-	if rows[0].Name != "本地链路" || rows[1].Name != "国内链路" {
+	if rows[0].Name != "Local link" || rows[1].Name != "Domestic link" {
 		t.Fatalf("链路异常统计名称不符合预期: %#v", rows)
 	}
 }
@@ -191,12 +226,35 @@ func TestBuildSummaryCardsShowsRemoteFailureRatio(t *testing.T) {
 		t.Fatalf("摘要卡片数量不足: %d", len(cards))
 	}
 	lastMetric := cards[2].Metrics[len(cards[2].Metrics)-1]
-	if lastMetric.Label != "失败率" {
+	if lastMetric.Label != "Failure rate" {
 		t.Fatalf("期望最后一个指标为失败率，实际为 %s", lastMetric.Label)
 	}
 	if lastMetric.Value != "50.0%" {
 		t.Fatalf("期望国外失败率为 50.0%%，实际为 %s", lastMetric.Value)
 	}
+}
+
+func TestReportBuildersSupportChinese(t *testing.T) {
+	localizer := i18n.New(i18n.Chinese)
+	samples := []model.Sample{
+		{Layer: "domestic", Metric: "download", Success: true, Value: 12},
+	}
+	cards := buildSummaryCardsForLang(samples, localizer)
+	if cards[1].Metrics[1].Label != "下载" {
+		t.Fatalf("期望中文下载指标，实际为 %s", cards[1].Metrics[1].Label)
+	}
+
+	base := time.Date(2026, 4, 10, 10, 0, 0, 0, time.Local)
+	rows := buildCauseRowsForLang([]model.Event{
+		{Name: "local", Status: "degraded", StartedAt: base, EndedAt: timePtr(base.Add(time.Minute))},
+	}, base, base.Add(time.Hour), localizer)
+	if len(rows) != 1 || rows[0].Name != "本地链路" {
+		t.Fatalf("期望中文链路名称，实际为 %#v", rows)
+	}
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }
 
 func TestBuildSummaryCardsMergesAverageAndP95(t *testing.T) {

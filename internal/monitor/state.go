@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"netcheck/internal/config"
+	"netcheck/internal/i18n"
 	"netcheck/internal/model"
 )
 
@@ -180,18 +181,26 @@ func (w *windows) add(sample model.Sample) {
 }
 
 func (w *windows) evaluate(cfg config.Config, now time.Time) map[string]model.LayerSnapshot {
+	return w.evaluateForLang(cfg, now, i18n.New(i18n.English))
+}
+
+func (w *windows) evaluateForLang(cfg config.Config, now time.Time, localizer i18n.Localizer) map[string]model.LayerSnapshot {
 	snapshots := map[string]model.LayerSnapshot{
-		"local":         evaluateLocal(cfg, now, w.localPing.stats()),
-		"domestic":      evaluateRemoteLayer("domestic", cfg, now, w.domesticTCP.stats(), w.domesticDL.stats()),
-		"international": evaluateRemoteLayer("international", cfg, now, w.internationalTCP.stats(), w.internationalDL.stats()),
+		"local":         evaluateLocalForLang(cfg, now, w.localPing.stats(), localizer),
+		"domestic":      evaluateRemoteLayerForLang("domestic", cfg, now, w.domesticTCP.stats(), w.domesticDL.stats(), localizer),
+		"international": evaluateRemoteLayerForLang("international", cfg, now, w.internationalTCP.stats(), w.internationalDL.stats(), localizer),
 	}
 	return snapshots
 }
 
 func evaluateLocal(cfg config.Config, now time.Time, stats metricStats) model.LayerSnapshot {
+	return evaluateLocalForLang(cfg, now, stats, i18n.New(i18n.English))
+}
+
+func evaluateLocalForLang(cfg config.Config, now time.Time, stats metricStats, localizer i18n.Localizer) model.LayerSnapshot {
 	snapshot := model.LayerSnapshot{Layer: "local", LastEvaluated: now}
 	if stats.Count < 5 {
-		snapshot.Summary = "本地链路样本不足"
+		snapshot.Summary = localizer.T("state.local_insufficient")
 		return snapshot
 	}
 	var evidence []string
@@ -199,21 +208,25 @@ func evaluateLocal(cfg config.Config, now time.Time, stats metricStats) model.La
 		evidence = append(evidence, fmt.Sprintf("P95 RTT %.1fms > %.1fms", stats.P95LatencyMs, cfg.Thresholds.GatewayRTTWarnMs))
 	}
 	if stats.JitterMs > cfg.Thresholds.GatewayJitterWarnMs {
-		evidence = append(evidence, fmt.Sprintf("抖动 %.1fms > %.1fms", stats.JitterMs, cfg.Thresholds.GatewayJitterWarnMs))
+		evidence = append(evidence, fmt.Sprintf(localizer.T("evidence.jitter"), stats.JitterMs, cfg.Thresholds.GatewayJitterWarnMs))
 	}
 	if stats.FailureRatio > cfg.Thresholds.GatewayLossWarnRatio {
-		evidence = append(evidence, fmt.Sprintf("丢包率 %.0f%% > %.0f%%", stats.FailureRatio*100, cfg.Thresholds.GatewayLossWarnRatio*100))
+		evidence = append(evidence, fmt.Sprintf(localizer.T("evidence.loss"), stats.FailureRatio*100, cfg.Thresholds.GatewayLossWarnRatio*100))
 	}
 	snapshot.Degraded = len(evidence) > 0
-	snapshot.Summary = fmt.Sprintf("网关 avg=%.1fms p95=%.1fms jitter=%.1fms loss=%.0f%%", stats.AvgLatencyMs, stats.P95LatencyMs, stats.JitterMs, stats.FailureRatio*100)
-	snapshot.Evidence = strings.Join(evidence, "；")
+	snapshot.Summary = fmt.Sprintf(localizer.T("state.local_summary"), stats.AvgLatencyMs, stats.P95LatencyMs, stats.JitterMs, stats.FailureRatio*100)
+	snapshot.Evidence = joinEvidence(evidence, localizer)
 	return snapshot
 }
 
 func evaluateRemoteLayer(layer string, cfg config.Config, now time.Time, latencyStats, downloadStats metricStats) model.LayerSnapshot {
+	return evaluateRemoteLayerForLang(layer, cfg, now, latencyStats, downloadStats, i18n.New(i18n.English))
+}
+
+func evaluateRemoteLayerForLang(layer string, cfg config.Config, now time.Time, latencyStats, downloadStats metricStats, localizer i18n.Localizer) model.LayerSnapshot {
 	snapshot := model.LayerSnapshot{Layer: layer, LastEvaluated: now}
 	var evidence []string
-	label := layerDisplayName(layer)
+	label := layerDisplayName(layer, localizer)
 	var warnLatency float64
 	var warnMbps float64
 	if layer == "domestic" {
@@ -225,38 +238,45 @@ func evaluateRemoteLayer(layer string, cfg config.Config, now time.Time, latency
 	}
 	if latencyStats.Count >= 4 {
 		if latencyStats.AvgLatencyMs > warnLatency {
-			evidence = append(evidence, fmt.Sprintf("平均延迟 %.1fms > %.1fms", latencyStats.AvgLatencyMs, warnLatency))
+			evidence = append(evidence, fmt.Sprintf(localizer.T("evidence.avg_latency"), latencyStats.AvgLatencyMs, warnLatency))
 		}
 		if latencyStats.FailureRatio > cfg.Thresholds.RemoteFailureWarnRatio {
-			evidence = append(evidence, fmt.Sprintf("失败率 %.0f%% > %.0f%%", latencyStats.FailureRatio*100, cfg.Thresholds.RemoteFailureWarnRatio*100))
+			evidence = append(evidence, fmt.Sprintf(localizer.T("evidence.failure_rate"), latencyStats.FailureRatio*100, cfg.Thresholds.RemoteFailureWarnRatio*100))
 		}
 	}
 	if downloadStats.Count >= 2 && downloadStats.SuccessCount > 0 && downloadStats.AvgValue < warnMbps {
-		evidence = append(evidence, fmt.Sprintf("平均下载速率 %.2fMbps < %.2fMbps", downloadStats.AvgValue, warnMbps))
+		evidence = append(evidence, fmt.Sprintf(localizer.T("evidence.avg_download"), downloadStats.AvgValue, warnMbps))
 	}
 	snapshot.Degraded = len(evidence) > 0
 	snapshot.Summary = fmt.Sprintf(
-		"%s 延迟 avg=%.1fms 失败率=%.0f%% dl=%.2fMbps",
+		localizer.T("state.remote_summary"),
 		label,
 		latencyStats.AvgLatencyMs,
 		latencyStats.FailureRatio*100,
 		downloadStats.AvgValue,
 	)
-	snapshot.Evidence = strings.Join(evidence, "；")
+	snapshot.Evidence = joinEvidence(evidence, localizer)
 	return snapshot
 }
 
-func layerDisplayName(layer string) string {
+func layerDisplayName(layer string, localizer i18n.Localizer) string {
 	switch layer {
 	case "local":
-		return "网关"
+		return localizer.T("layer.gateway")
 	case "domestic":
-		return "国内"
+		return localizer.T("layer.domestic")
 	case "international":
-		return "国外"
+		return localizer.T("layer.international")
 	default:
 		return layer
 	}
+}
+
+func joinEvidence(evidence []string, localizer i18n.Localizer) string {
+	if localizer.Lang() == i18n.Chinese {
+		return strings.Join(evidence, "；")
+	}
+	return strings.Join(evidence, "; ")
 }
 
 func newTracker(cfg config.Config) stateTracker {

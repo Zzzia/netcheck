@@ -29,14 +29,14 @@ func PingOnce(parent context.Context, target string, timeout time.Duration) Ping
 		return PingResult{
 			Target:  target,
 			Success: false,
-			Err:     fmt.Errorf("ping 超时: %w", ctx.Err()),
+			Err:     fmt.Errorf("ping timed out: %w", ctx.Err()),
 		}
 	}
 	if err != nil {
 		return PingResult{
 			Target:  target,
 			Success: false,
-			Err:     fmt.Errorf("ping 失败: %w, 输出: %s", err, strings.TrimSpace(string(output))),
+			Err:     fmt.Errorf("ping failed: %w, output: %s", err, strings.TrimSpace(string(output))),
 		}
 	}
 	matches := pingRTTRE.FindStringSubmatch(string(output))
@@ -44,7 +44,7 @@ func PingOnce(parent context.Context, target string, timeout time.Duration) Ping
 		return PingResult{
 			Target:  target,
 			Success: false,
-			Err:     fmt.Errorf("无法从 ping 输出解析延迟: %s", strings.TrimSpace(string(output))),
+			Err:     fmt.Errorf("cannot parse latency from ping output: %s", strings.TrimSpace(string(output))),
 		}
 	}
 	latencyMs, parseErr := strconv.ParseFloat(matches[1], 64)
@@ -52,7 +52,7 @@ func PingOnce(parent context.Context, target string, timeout time.Duration) Ping
 		return PingResult{
 			Target:  target,
 			Success: false,
-			Err:     fmt.Errorf("解析 ping 延迟失败: %w", parseErr),
+			Err:     fmt.Errorf("parse ping latency failed: %w", parseErr),
 		}
 	}
 	return PingResult{

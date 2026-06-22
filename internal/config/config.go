@@ -68,7 +68,7 @@ type AlertConfig struct {
 func DefaultPath() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("获取用户配置目录失败: %w", err)
+		return "", fmt.Errorf("get user config directory failed: %w", err)
 	}
 	return filepath.Join(base, "netcheck", "config.json"), nil
 }
@@ -160,11 +160,11 @@ func Load(path string) (Config, error) {
 			}
 			return defaults, nil
 		}
-		return Config{}, fmt.Errorf("读取配置失败: %w", readErr)
+		return Config{}, fmt.Errorf("read config failed: %w", readErr)
 	}
 	cfg := cloneConfig(defaults)
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("解析配置失败: %w", err)
+		return Config{}, fmt.Errorf("parse config failed: %w", err)
 	}
 	applyLegacyDefaults(&cfg, defaults)
 	if strings.TrimSpace(cfg.DBPath) == "" {
@@ -189,18 +189,18 @@ func WriteDefault(path string, force bool) error {
 	}
 	if !force {
 		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("配置文件已存在: %s", path)
+			return fmt.Errorf("config file already exists: %s", path)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %w", err)
+		return fmt.Errorf("create config directory failed: %w", err)
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化默认配置失败: %w", err)
+		return fmt.Errorf("serialize default config failed: %w", err)
 	}
 	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
-		return fmt.Errorf("写入默认配置失败: %w", err)
+		return fmt.Errorf("write default config failed: %w", err)
 	}
 	return nil
 }
@@ -240,33 +240,33 @@ func usesLegacyInternationalLatencyDefaults(targets []Target) bool {
 
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.DBPath) == "" {
-		return errors.New("db_path 不能为空")
+		return errors.New("db_path cannot be empty")
 	}
 	if c.Sampling.GatewayIntervalSec <= 0 || c.Sampling.DomesticLatencyIntervalSec <= 0 || c.Sampling.InternationalLatencySeconds <= 0 {
-		return errors.New("延迟采样周期必须大于 0")
+		return errors.New("latency sampling intervals must be greater than 0")
 	}
 	if c.Sampling.DomesticDownloadIntervalSec <= 0 || c.Sampling.InternationalDownloadSec <= 0 {
-		return errors.New("下载采样周期必须大于 0")
+		return errors.New("download sampling intervals must be greater than 0")
 	}
 	if c.Sampling.DomesticDownloadBytes <= 0 || c.Sampling.InternationalDownloadBytes <= 0 {
-		return errors.New("下载字节数必须大于 0")
+		return errors.New("download byte limits must be greater than 0")
 	}
 	if c.Sampling.PingTimeoutSec <= 0 || c.Sampling.ConnectTimeoutMs <= 0 || c.Sampling.HTTPTimeoutMs <= 0 {
-		return errors.New("超时配置必须大于 0")
+		return errors.New("timeout settings must be greater than 0")
 	}
 	if len(c.Targets.DomesticLatency) == 0 || len(c.Targets.InternationalLatency) == 0 {
-		return errors.New("延迟探测目标不能为空")
+		return errors.New("latency probe targets cannot be empty")
 	}
 	if len(c.Targets.DomesticDownloads) == 0 || len(c.Targets.InternationalDownloads) == 0 {
-		return errors.New("下载探测目标不能为空")
+		return errors.New("download probe targets cannot be empty")
 	}
 	for _, target := range append(append([]Target{}, c.Targets.DomesticLatency...), c.Targets.InternationalLatency...) {
 		if strings.TrimSpace(target.Address) == "" && strings.TrimSpace(target.URL) == "" {
-			return fmt.Errorf("延迟探测目标 %s 必须至少配置 address 或 url", target.Name)
+			return fmt.Errorf("latency probe target %s must configure at least address or url", target.Name)
 		}
 	}
 	if c.Thresholds.EnterConsecutive <= 0 || c.Thresholds.RecoverConsecutive <= 0 {
-		return errors.New("状态去抖配置必须大于 0")
+		return errors.New("state debounce settings must be greater than 0")
 	}
 	return nil
 }

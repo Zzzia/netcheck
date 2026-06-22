@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"netcheck/internal/i18n"
 )
 
 const maxCodexWindow = 24 * time.Hour
@@ -52,17 +54,26 @@ type codexTurnStats struct {
 }
 
 func buildCodexReport(start, end time.Time) codexReport {
+	return buildCodexReportForLang(start, end, i18n.English)
+}
+
+func buildCodexReportForLang(start, end time.Time, lang i18n.Lang) codexReport {
 	source, ok := defaultCodexLogSource()
 	if !ok {
-		return buildCodexReportFromLog(defaultCodexLogPath(), start, end)
+		return buildCodexReportFromLogForLang(defaultCodexLogPath(), start, end, lang)
 	}
 	if source.kind == codexLogSourceSQLite {
-		return buildCodexReportFromSQLite(source.path, start, end)
+		return buildCodexReportFromSQLiteForLang(source.path, start, end, lang)
 	}
-	return buildCodexReportFromLog(source.path, start, end)
+	return buildCodexReportFromLogForLang(source.path, start, end, lang)
 }
 
 func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
+	return buildCodexReportFromLogForLang(logPath, start, end, i18n.English)
+}
+
+func buildCodexReportFromLogForLang(logPath string, start, end time.Time, lang i18n.Lang) codexReport {
+	localizer := i18n.New(lang)
 	codexStart := start
 	clamped := false
 	if end.Sub(start) > maxCodexWindow {
@@ -77,15 +88,15 @@ func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
 		Clamped:    clamped,
 	}
 	if strings.TrimSpace(logPath) == "" {
-		report.Error = "Codex 日志路径为空"
+		report.Error = localizer.T("codex.error.empty_path")
 		return report
 	}
 	reader, exactLineNumbers, err := openCodexLogReader(logPath, codexStart)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			report.Error = "未检测到 Codex 日志"
+			report.Error = localizer.T("codex.error.missing_log")
 		} else {
-			report.Error = fmt.Sprintf("读取 Codex 日志失败: %v", err)
+			report.Error = fmt.Sprintf(localizer.T("codex.error.read_log"), err)
 		}
 		return report
 	}
@@ -93,10 +104,10 @@ func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
 
 	parsed, err := parseCodexLogWithLineMode(reader, codexStart, end, exactLineNumbers)
 	if err != nil {
-		report.Error = err.Error()
+		report.Error = fmt.Sprintf(localizer.T("codex.error.scan_log"), err)
 		return report
 	}
-	return parsed.finalize(report, codexStart, end)
+	return parsed.finalizeForLang(report, codexStart, end, localizer)
 }
 
 func defaultCodexLogPath() string {
@@ -170,7 +181,7 @@ func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLine
 			continue
 		}
 		if classification.kind == "noise" {
-			result.noise[classification.label]++
+			result.noise[classification.labelKey]++
 			continue
 		}
 		result.counts[classification.kind]++
@@ -178,7 +189,7 @@ func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLine
 			result.addOtherEvent(item, classification)
 			continue
 		}
-		event := buildCodexEventRow(item, classification)
+		event := buildCodexEventRow(item, classification, i18n.New(i18n.English))
 		if event.Kind == "stream_retry" {
 			if item.turnID != "" {
 				result.retryTurns[item.turnID] = struct{}{}
@@ -191,7 +202,7 @@ func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLine
 		result.addTimelineEvent(item.ts.Local().Truncate(bucket.Duration), event.Kind)
 	}
 	if err := scanner.Err(); err != nil {
-		return result, fmt.Errorf("扫描 Codex 日志失败: %w", err)
+		return result, err
 	}
 	return result, nil
 }
@@ -220,56 +231,64 @@ func parseCodexLine(raw string, lineNo int) (codexParsedLine, bool) {
 
 func classifyCodexLine(item codexParsedLine) codexLineClass {
 	if match := trueRetryPattern.FindStringSubmatch(item.raw); match != nil && isTrueRetryLog(item) {
-		return codexLineClass{kind: "stream_retry", label: "响应流断开重试", attempt: match[1] + "/" + match[2], backoff: match[3] + match[4]}
+		return codexLineClass{kind: "stream_retry", labelKey: "codex.kind.stream_retry", attempt: match[1] + "/" + match[2], backoff: match[3] + match[4]}
 	}
 	lower := strings.ToLower(item.raw)
 	switch {
 	case strings.Contains(lower, "write_stdin failed") || strings.Contains(lower, "apply_patch verification failed"):
-		return codexLineClass{kind: "tool_error", label: "本地工具错误"}
+		return codexLineClass{kind: "tool_error", labelKey: "codex.kind.tool_error"}
 	case strings.Contains(lower, "failed to record rollout items"):
-		return codexLineClass{kind: "rollout_record_error", label: "会话记录错误"}
+		return codexLineClass{kind: "rollout_record_error", labelKey: "codex.kind.rollout_record_error"}
 	case strings.Contains(lower, "request failed with status 403") || strings.Contains(lower, "403 forbidden"):
-		return codexLineClass{kind: "apps_or_tool_suggestion_403", label: "Apps/工具建议 403"}
+		return codexLineClass{kind: "apps_or_tool_suggestion_403", labelKey: "codex.kind.apps_or_tool_403"}
 	case containsAny(lower, []string{"timed out", "timeout", "deadline", "dns", "tls", "503 service unavailable", "502 bad gateway", "504 gateway timeout", "connection reset", "error sending request", "rate limit"}):
-		return codexLineClass{kind: "network_candidate", label: "网络错误"}
+		return codexLineClass{kind: "network_candidate", labelKey: "codex.kind.network_candidate"}
 	case isCodexNoise(lower):
-		return codexLineClass{kind: "noise", label: noiseName(lower)}
+		return codexLineClass{kind: "noise", labelKey: noiseNameKey(lower)}
 	case item.level == "ERROR":
-		return codexLineClass{kind: "unknown_error", label: "未知错误"}
+		return codexLineClass{kind: "unknown_error", labelKey: "codex.kind.unknown_error"}
 	default:
-		return codexLineClass{kind: "unknown_warning", label: "未知警告"}
+		return codexLineClass{kind: "unknown_warning", labelKey: "codex.kind.unknown_warning"}
 	}
 }
 
 type codexLineClass struct {
-	kind    string
-	label   string
-	attempt string
-	backoff string
+	kind     string
+	labelKey string
+	attempt  string
+	backoff  string
 }
 
-func buildCodexEventRow(item codexParsedLine, class codexLineClass) codexEventRow {
+func buildCodexEventRow(item codexParsedLine, class codexLineClass, localizer i18n.Localizer) codexEventRow {
 	return codexEventRow{
-		Kind:      class.kind,
-		KindLabel: class.label,
-		Level:     item.level,
-		Time:      item.ts.Local().Format("2006-01-02 15:04:05"),
-		Ts:        item.ts.Local().Format(time.RFC3339),
-		Line:      item.lineNo,
-		Model:     item.model,
-		ThreadID:  item.threadID,
-		TurnID:    item.turnID,
-		Attempt:   class.attempt,
-		Backoff:   class.backoff,
-		Summary:   item.message,
-		Evidence:  truncateText(item.raw, 360),
+		Kind:         class.kind,
+		KindLabel:    localizer.T(class.labelKey),
+		KindLabelKey: class.labelKey,
+		Level:        item.level,
+		Time:         item.ts.Local().Format("2006-01-02 15:04:05"),
+		Ts:           item.ts.Local().Format(time.RFC3339),
+		Line:         item.lineNo,
+		Model:        item.model,
+		ThreadID:     item.threadID,
+		TurnID:       item.turnID,
+		Attempt:      class.attempt,
+		Backoff:      class.backoff,
+		Summary:      item.message,
+		Evidence:     truncateText(item.raw, 360),
 	}
 }
 
 func (r *codexParseResult) finalize(report codexReport, start, end time.Time) codexReport {
+	return r.finalizeForLang(report, start, end, i18n.New(i18n.English))
+}
+
+func (r *codexParseResult) finalizeForLang(report codexReport, start, end time.Time, localizer i18n.Localizer) codexReport {
 	events := r.events
 	sort.Slice(events, func(i, j int) bool { return events[i].Ts > events[j].Ts })
 	for index := range events {
+		if events[index].KindLabelKey != "" {
+			events[index].KindLabel = localizer.T(events[index].KindLabelKey)
+		}
 		if events[index].TurnID == "" {
 			continue
 		}
@@ -289,8 +308,8 @@ func (r *codexParseResult) finalize(report codexReport, start, end time.Time) co
 	report.Summary = r.summary()
 	report.Timeline = r.timelineRows(start, end)
 	report.Events = events
-	report.NoiseSummary = r.noiseRows()
-	report.OtherSummary = r.otherRows()
+	report.NoiseSummary = r.noiseRows(localizer)
+	report.OtherSummary = r.otherRows(localizer)
 	return report
 }
 
@@ -375,10 +394,10 @@ func (r *codexParseResult) timelineRows(start, end time.Time) []codexTimelinePoi
 	return rows
 }
 
-func (r *codexParseResult) noiseRows() []codexNoiseRow {
+func (r *codexParseResult) noiseRows(localizer i18n.Localizer) []codexNoiseRow {
 	rows := make([]codexNoiseRow, 0, len(r.noise))
-	for name, count := range r.noise {
-		rows = append(rows, codexNoiseRow{Name: name, Count: count})
+	for key, count := range r.noise {
+		rows = append(rows, codexNoiseRow{Name: localizer.T(key), NameKey: key, Count: count})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Count > rows[j].Count })
 	return rows
@@ -427,18 +446,18 @@ func isCodexNoise(lower string) bool {
 		strings.Contains(lower, "failed to paste image: no image on clipboard")
 }
 
-func noiseName(lower string) string {
+func noiseNameKey(lower string) string {
 	switch {
 	case strings.Contains(lower, "ignoring interface.icon_"):
-		return "插件/Skill 图标配置告警"
+		return "codex.noise.plugin_icon"
 	case strings.Contains(lower, "ignoring interface.defaultprompt"):
-		return "插件默认 Prompt 配置告警"
+		return "codex.noise.default_prompt"
 	case strings.Contains(lower, "failed to unwatch"):
-		return "文件监听释放告警"
+		return "codex.noise.file_watcher"
 	case strings.Contains(lower, "failed to paste image"):
-		return "剪贴板图片读取告警"
+		return "codex.noise.clipboard"
 	default:
-		return "其他降噪告警"
+		return "codex.noise.other"
 	}
 }
 

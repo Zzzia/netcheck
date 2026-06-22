@@ -18,12 +18,12 @@ type Store struct {
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+		return nil, fmt.Errorf("create database directory failed: %w", err)
 	}
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", filepath.ToSlash(path))
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("打开 sqlite 数据库失败: %w", err)
+		return nil, fmt.Errorf("open sqlite database failed: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	store := &Store{db: db}
@@ -73,7 +73,7 @@ func (s *Store) init() error {
 	}
 	for _, statement := range schema {
 		if _, err := s.db.Exec(statement); err != nil {
-			return fmt.Errorf("初始化数据库失败: %w", err)
+			return fmt.Errorf("initialize database failed: %w", err)
 		}
 	}
 	return nil
@@ -95,7 +95,7 @@ func (s *Store) InsertSample(sample model.Sample) error {
 		sample.ErrorText,
 	)
 	if err != nil {
-		return fmt.Errorf("写入采样失败: %w", err)
+		return fmt.Errorf("insert sample failed: %w", err)
 	}
 	return nil
 }
@@ -111,11 +111,11 @@ func (s *Store) BeginEvent(name, status, summary, evidence string, startedAt tim
 		startedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("写入事件开始失败: %w", err)
+		return 0, fmt.Errorf("insert event start failed: %w", err)
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("获取事件 ID 失败: %w", err)
+		return 0, fmt.Errorf("get event ID failed: %w", err)
 	}
 	return id, nil
 }
@@ -124,11 +124,11 @@ func (s *Store) EndEvent(id int64, endedAt time.Time) error {
 	row := s.db.QueryRow(`SELECT started_at FROM state_events WHERE id = ?`, id)
 	var startedAtRaw string
 	if err := row.Scan(&startedAtRaw); err != nil {
-		return fmt.Errorf("读取事件开始时间失败: %w", err)
+		return fmt.Errorf("read event start time failed: %w", err)
 	}
 	startedAt, err := time.Parse(time.RFC3339Nano, startedAtRaw)
 	if err != nil {
-		return fmt.Errorf("解析事件开始时间失败: %w", err)
+		return fmt.Errorf("parse event start time failed: %w", err)
 	}
 	durationSec := int64(endedAt.Sub(startedAt).Seconds())
 	if durationSec < 0 {
@@ -143,7 +143,7 @@ func (s *Store) EndEvent(id int64, endedAt time.Time) error {
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("结束事件失败: %w", err)
+		return fmt.Errorf("end event failed: %w", err)
 	}
 	return nil
 }
@@ -156,7 +156,7 @@ func (s *Store) LoadOpenEvents() ([]model.Event, error) {
 		 ORDER BY started_at ASC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询打开事件失败: %w", err)
+		return nil, fmt.Errorf("query open events failed: %w", err)
 	}
 	defer rows.Close()
 	return scanEvents(rows)
@@ -171,7 +171,7 @@ func (s *Store) LoadSamplesSince(since time.Time) ([]model.Sample, error) {
 		since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询采样失败: %w", err)
+		return nil, fmt.Errorf("query samples failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -183,17 +183,17 @@ func (s *Store) LoadSamplesSince(since time.Time) ([]model.Sample, error) {
 			ok   int
 		)
 		if err := rows.Scan(&item.ID, &ts, &item.Layer, &item.Metric, &item.Target, &ok, &item.LatencyMs, &item.Value, &item.BytesRX, &item.Detail, &item.ErrorText); err != nil {
-			return nil, fmt.Errorf("读取采样失败: %w", err)
+			return nil, fmt.Errorf("read sample failed: %w", err)
 		}
 		item.Success = ok == 1
 		item.Timestamp, err = time.Parse(time.RFC3339Nano, ts)
 		if err != nil {
-			return nil, fmt.Errorf("解析采样时间失败: %w", err)
+			return nil, fmt.Errorf("parse sample time failed: %w", err)
 		}
 		samples = append(samples, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历采样结果失败: %w", err)
+		return nil, fmt.Errorf("iterate sample rows failed: %w", err)
 	}
 	return samples, nil
 }
@@ -208,7 +208,7 @@ func (s *Store) LoadEventsSince(since time.Time) ([]model.Event, error) {
 		since.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询事件失败: %w", err)
+		return nil, fmt.Errorf("query events failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -225,25 +225,25 @@ func scanEvents(rows *sql.Rows) ([]model.Event, error) {
 			isOpenValue int
 		)
 		if err := rows.Scan(&item.ID, &item.Name, &item.Status, &item.Summary, &item.Evidence, &startedAt, &endedAtRaw, &item.DurationSec, &isOpenValue); err != nil {
-			return nil, fmt.Errorf("读取事件失败: %w", err)
+			return nil, fmt.Errorf("read event failed: %w", err)
 		}
 		item.IsOpen = isOpenValue == 1
 		parsedStartedAt, parseErr := time.Parse(time.RFC3339Nano, startedAt)
 		if parseErr != nil {
-			return nil, fmt.Errorf("解析事件开始时间失败: %w", parseErr)
+			return nil, fmt.Errorf("parse event start time failed: %w", parseErr)
 		}
 		item.StartedAt = parsedStartedAt
 		if endedAtRaw.Valid {
 			endedAt, parseErr := time.Parse(time.RFC3339Nano, endedAtRaw.String)
 			if parseErr != nil {
-				return nil, fmt.Errorf("解析事件结束时间失败: %w", parseErr)
+				return nil, fmt.Errorf("parse event end time failed: %w", parseErr)
 			}
 			item.EndedAt = &endedAt
 		}
 		events = append(events, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历事件结果失败: %w", err)
+		return nil, fmt.Errorf("iterate event rows failed: %w", err)
 	}
 	return events, nil
 }

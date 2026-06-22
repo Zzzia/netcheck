@@ -1,6 +1,27 @@
-const { liveMode, initialPayload, defaultRange } = window.reportConfig;
+const { liveMode, initialPayload, defaultRange, initialLang, translations } = window.reportConfig;
 let currentQuery = null;
 let codexRequestSeq = 0;
+let currentLang = initialLang || 'en';
+let lastPayload = null;
+let lastCodexPayload = null;
+
+document.querySelectorAll('[data-lang]').forEach((button) => {
+  button.addEventListener('click', () => {
+    currentLang = button.dataset.lang || 'en';
+    document.documentElement.lang = currentLang;
+    renderStaticLabels();
+    updateLanguageButtons();
+    if (lastPayload) {
+      render(lastPayload, true);
+    }
+    if (lastCodexPayload) {
+      renderCodex(lastCodexPayload);
+    }
+    if (liveMode && currentQuery) {
+      loadRange(currentQuery, true);
+    }
+  });
+});
 
 document.querySelectorAll('[data-range]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -16,7 +37,7 @@ document.getElementById('apply-custom').addEventListener('click', () => {
   const start = document.getElementById('start-input').value;
   const end = document.getElementById('end-input').value;
   if (!start || !end) {
-    window.alert('请同时填写开始和结束时间');
+    window.alert(t('ui.alert.custom_range'));
     return;
   }
   currentQuery = { start, end };
@@ -25,6 +46,8 @@ document.getElementById('apply-custom').addEventListener('click', () => {
 });
 
 function bootstrap() {
+  renderStaticLabels();
+  updateLanguageButtons();
   if (liveMode) {
     currentQuery = { range: defaultRange };
     setActivePreset(defaultRange);
@@ -38,7 +61,7 @@ function bootstrap() {
 
 async function loadRange(params, preserveControls) {
   try {
-    const query = new URLSearchParams(params);
+    const query = withLang(params);
     const response = await fetch(`/api/report-data?${query.toString()}`);
     if (!response.ok) {
       throw new Error(await response.text());
@@ -56,10 +79,10 @@ async function loadRange(params, preserveControls) {
 async function loadCodex(params, showLoading) {
   const requestID = ++codexRequestSeq;
   if (showLoading) {
-    renderCodexLoading('正在分析 Codex 本地日志...');
+    renderCodexLoading(t('codex.loading'));
   }
   try {
-    const query = new URLSearchParams(params);
+    const query = withLang(params);
     const response = await fetch(`/api/codex-data?${query.toString()}`);
     if (!response.ok) {
       throw new Error(await response.text());
@@ -74,7 +97,8 @@ async function loadCodex(params, showLoading) {
 }
 
 function render(payload, preserveControls) {
-  document.getElementById('generated-at').textContent = `更新时间：${payload.generated_at}`;
+  lastPayload = payload;
+  document.getElementById('generated-at').textContent = formatText('ui.updated_at', payload.generated_at);
   renderSummary(payload.summary || []);
   renderEventMeta(payload.event_meta || { count: 0, longest: '0s' });
   renderCauses(payload.causes || []);
@@ -96,8 +120,8 @@ function renderSummary(cards) {
     const article = document.createElement('article');
     article.className = 'card';
     article.innerHTML = `
-      <h2>${card.title}</h2>
-      <div class="metric-list" style="--metric-columns:${Math.max((card.metrics || []).length, 1)};">
+      <h2>${translateValue(card.title_key, card.title)}</h2>
+      <div class="metric-list">
         ${(card.metrics || []).map((metric) => renderSummaryMetric(metric)).join('')}
       </div>
     `;
@@ -109,12 +133,12 @@ function renderSummaryMetric(metric) {
   if (metric.lines && metric.lines.length) {
     return `
       <div class="metric-entry">
-        <div class="metric-label">${metric.label}</div>
+        <div class="metric-label">${translateValue(metric.label_key, metric.label)}</div>
         <div class="metric-stack">
           ${metric.lines.map((line) => `
             <div class="metric-row">
               <span class="metric-value">${line.value}</span>
-              <span class="metric-tag">${line.label}</span>
+              <span class="metric-tag">${translateValue(line.label_key, line.label)}</span>
             </div>
           `).join('')}
         </div>
@@ -123,7 +147,7 @@ function renderSummaryMetric(metric) {
   }
   return `
     <div class="metric-entry">
-      <div class="metric-label">${metric.label}</div>
+      <div class="metric-label">${translateValue(metric.label_key, metric.label)}</div>
       <div class="metric-row">
         <span class="metric-value">${metric.value}</span>
       </div>
@@ -133,9 +157,9 @@ function renderSummaryMetric(metric) {
 
 function renderEventMeta(meta) {
   document.getElementById('event-meta').innerHTML = `
-    <div class="metric-label">异常次数</div>
+    <div class="metric-label">${t('ui.incident_count')}</div>
     <div class="metric-value">${meta.count}</div>
-    <div class="metric-label" style="margin-top:12px;">最长持续</div>
+    <div class="metric-label" style="margin-top:12px;">${t('ui.longest_duration')}</div>
     <div class="metric-value">${meta.longest}</div>
   `;
 }
@@ -143,14 +167,14 @@ function renderEventMeta(meta) {
 function renderCauses(causes) {
   const root = document.getElementById('cause-table');
   if (!causes.length) {
-    root.innerHTML = '<div class="empty">当前时间范围内没有异常归因数据。</div>';
+    root.innerHTML = `<div class="empty">${t('ui.empty_causes')}</div>`;
     return;
   }
   root.innerHTML = `
     <table>
-      <thead><tr><th>类别</th><th>累计时长</th></tr></thead>
+      <thead><tr><th>${t('ui.table.category')}</th><th>${t('ui.table.total_duration')}</th></tr></thead>
       <tbody>
-        ${causes.map((item) => `<tr><td>${item.name}</td><td>${item.duration}</td></tr>`).join('')}
+        ${causes.map((item) => `<tr><td>${translateValue(item.name_key, item.name)}</td><td>${item.duration}</td></tr>`).join('')}
       </tbody>
     </table>
   `;
@@ -162,7 +186,7 @@ function renderGroups(groups) {
   groups.forEach((group) => {
     const section = document.createElement('section');
     section.className = 'dimension';
-    section.innerHTML = `<h2>${group.title}</h2><div class="dimension-grid"></div>`;
+    section.innerHTML = `<h2>${translateValue(group.title_key, group.title)}</h2><div class="dimension-grid"></div>`;
     root.appendChild(section);
     const grid = section.querySelector('.dimension-grid');
     (group.charts || []).forEach((chart) => {
@@ -170,10 +194,10 @@ function renderGroups(groups) {
       article.className = 'card chart';
       article.innerHTML = `
         <div class="chart-header">
-          <h3>${chart.title}</h3>
-          <span>${chart.unit}</span>
+          <h3>${translateValue(chart.title_key, chart.title)}</h3>
+          <span>${translateValue(chart.unit_key, chart.unit)}</span>
         </div>
-        <svg viewBox="0 0 560 220" role="img" aria-label="${chart.title}"></svg>
+        <svg viewBox="0 0 560 220" role="img" aria-label="${translateValue(chart.title_key, chart.title)}"></svg>
         <div class="chart-tooltip" aria-hidden="true"></div>
       `;
       grid.appendChild(article);
@@ -185,29 +209,29 @@ function renderGroups(groups) {
 function renderEvents(events) {
   const root = document.getElementById('event-table');
   if (!events.length) {
-    root.innerHTML = '<div class="empty">当前时间范围内没有事件记录。</div>';
+    root.innerHTML = `<div class="empty">${t('ui.empty_events')}</div>`;
     return;
   }
   root.innerHTML = `
     <table>
       <thead>
         <tr>
-          <th>类别</th>
-          <th>状态</th>
-          <th>摘要</th>
-          <th>证据</th>
-          <th>窗口内开始</th>
-          <th>窗口内结束</th>
-          <th>窗口内持续</th>
+          <th>${t('ui.table.category')}</th>
+          <th>${t('ui.table.status')}</th>
+          <th>${t('ui.table.summary')}</th>
+          <th>${t('ui.table.evidence')}</th>
+          <th>${t('ui.table.window_start')}</th>
+          <th>${t('ui.table.window_end')}</th>
+          <th>${t('ui.table.window_duration')}</th>
         </tr>
       </thead>
       <tbody>
         ${events.map((item) => `
           <tr>
-            <td>${item.name}</td>
-            <td>${item.status}</td>
-            <td>${item.summary}</td>
-            <td>${item.evidence}</td>
+            <td>${translateValue(item.name_key, item.name)}</td>
+            <td>${translateValue(item.status_key, item.status)}</td>
+            <td>${translateLocalizedText(item.summary_i18n, item.summary)}</td>
+            <td>${translateLocalizedText(item.evidence_i18n, item.evidence)}</td>
             <td>${item.started_at}</td>
             <td>${item.ended_at}</td>
             <td>${item.duration}</td>
@@ -226,7 +250,7 @@ function drawChart(svg, tooltip, chart) {
   const points = series.points || [];
   if (!points.length) {
     tooltip.remove();
-    svg.innerHTML = `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280">无数据</text>`;
+    svg.innerHTML = `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280">${t('common.no_data')}</text>`;
     return;
   }
 
@@ -236,7 +260,7 @@ function drawChart(svg, tooltip, chart) {
   const maxX = Math.max(...times);
   let minY = chart.start_at_zero ? 0 : Math.min(...values);
   let maxY = Math.max(...values);
-  if (chart.unit === '比例') {
+  if (isRatioUnit(chart.unit, chart.unit_key)) {
     maxY = maxY === 0 ? 0.1 : Math.min(1, Math.max(maxY * 1.25, 0.05));
   }
   if (minY === maxY) {
@@ -259,7 +283,7 @@ function drawChart(svg, tooltip, chart) {
     const gy = padding.top + (plotHeight / ticks) * index;
     const tickValue = maxY - ((maxY - minY) / ticks) * index;
     grid += `<line x1="${padding.left}" y1="${gy}" x2="${width - padding.right}" y2="${gy}" stroke="rgba(38,70,83,0.12)" />`;
-    grid += `<text x="${padding.left - 10}" y="${gy + 4}" text-anchor="end" font-size="11" fill="#6b7280">${tickValue.toFixed(chart.unit === '比例' ? 2 : 1)}</text>`;
+    grid += `<text x="${padding.left - 10}" y="${gy + 4}" text-anchor="end" font-size="11" fill="#6b7280">${tickValue.toFixed(isRatioUnit(chart.unit, chart.unit_key) ? 2 : 1)}</text>`;
   }
 
   const startLabel = formatTime(points[0].ts, chart.time_format);
@@ -294,10 +318,10 @@ function drawChart(svg, tooltip, chart) {
     activePoint.setAttribute('cx', point.cx);
     activePoint.setAttribute('cy', point.cy);
     tooltip.innerHTML = `
-      <div class="chart-tooltip-label">时间</div>
+      <div class="chart-tooltip-label">${t('ui.tooltip.time')}</div>
       <div class="chart-tooltip-value">${formatTooltipTime(point.ts, chart.time_format)}</div>
-      <div class="chart-tooltip-label" style="margin-top:6px;">数值</div>
-      <div class="chart-tooltip-value">${formatTooltipValue(point.value, chart.unit)}</div>
+      <div class="chart-tooltip-label" style="margin-top:6px;">${t('ui.tooltip.value')}</div>
+      <div class="chart-tooltip-value">${formatTooltipValue(point.value, translateValue(chart.unit_key, chart.unit), chart.unit_key)}</div>
     `;
     positionTooltip(svg, chartCard, tooltip, point);
     tooltip.classList.add('is-visible');
@@ -360,11 +384,15 @@ function formatTooltipTime(value, mode) {
   return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
-function formatTooltipValue(value, unit) {
-  if (unit === '比例') {
+function formatTooltipValue(value, unit, unitKey) {
+  if (isRatioUnit(unit, unitKey)) {
     return `${value.toFixed(2)} (${(value * 100).toFixed(1)}%)`;
   }
   return `${value.toFixed(2)} ${unit}`;
+}
+
+function isRatioUnit(unit, unitKey) {
+  return unitKey === 'unit.ratio' || unit === 'ratio' || unit === '比例';
 }
 
 function setActivePreset(range) {
@@ -385,6 +413,47 @@ function disableToolbar() {
 
 function toDateTimeLocal(value) {
   return value.replace(' ', 'T');
+}
+
+function renderStaticLabels() {
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.title = t('ui.title');
+}
+
+function updateLanguageButtons() {
+  document.querySelectorAll('[data-lang]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.lang === currentLang);
+  });
+}
+
+function withLang(params) {
+  const query = new URLSearchParams(params);
+  query.set('lang', currentLang);
+  return query;
+}
+
+function translateValue(key, fallback) {
+  return key ? t(key) : fallback;
+}
+
+function translateLocalizedText(values, fallback) {
+  return (values && (values[currentLang] || values.en)) || fallback;
+}
+
+function t(key) {
+  return (translations && translations[currentLang] && translations[currentLang][key]) ||
+    (translations && translations.en && translations.en[key]) ||
+    key;
+}
+
+function formatText(key, ...args) {
+  let template = t(key);
+  args.forEach((value) => {
+    template = template.replace(/%[sd]/, String(value));
+  });
+  return template;
 }
 
 bootstrap();

@@ -1,11 +1,12 @@
 function renderCodex(codex) {
+  lastCodexPayload = codex;
   const root = document.getElementById('codex-section');
   if (!root) return;
   if (!codex || !codex.available) {
     root.innerHTML = `
-      <h2>Codex 网络稳定性</h2>
+      <h2>${t('codex.title')}</h2>
       <div class="panel">
-        <div class="empty">${escapeHTML((codex && codex.error) || '未检测到 Codex 日志。')}</div>
+        <div class="empty">${escapeHTML((codex && codex.error) || t('codex.empty'))}</div>
       </div>
     `;
     return;
@@ -14,21 +15,21 @@ function renderCodex(codex) {
   const summary = codex.summary || {};
   root.innerHTML = `
     <div class="codex-title-row">
-      <h2>Codex 网络稳定性</h2>
-      <span>${escapeHTML(codex.range_label || '')}${codex.clamped ? ' · 已按最近 24 小时统计' : ''}</span>
+      <h2>${t('codex.title')}</h2>
+      <span>${escapeHTML(codex.range_label || '')}${codex.clamped ? ` · ${t('codex.clamped')}` : ''}</span>
     </div>
     <div class="codex-grid">
-      ${renderCodexMetric('断流重试', `${summary.retry_events || 0} / ${summary.stream_requests || 0}`, `${summary.retry_event_rate || '0%'} / 采样请求`)}
-      ${renderCodexMetric('受影响 turn', `${summary.retry_affected_turns || 0} / ${summary.completed_turns || 0}`, `${summary.retry_affected_turn_rate || '0%'} / 完成 turn`)}
-      ${renderCodexMetric('网络错误', summary.network_candidates || 0, 'timeout / DNS / TLS / 5xx')}
-      ${renderCodexMetric('最大重试深度', summary.max_retry_attempt || '0/5', '自动恢复深度')}
+      ${renderCodexMetric(t('codex.metric.retry'), `${summary.retry_events || 0} / ${summary.stream_requests || 0}`, formatText('codex.hint.sampling_requests', summary.retry_event_rate || '0%'))}
+      ${renderCodexMetric(t('codex.metric.affected_turns'), `${summary.retry_affected_turns || 0} / ${summary.completed_turns || 0}`, formatText('codex.hint.completed_turns', summary.retry_affected_turn_rate || '0%'))}
+      ${renderCodexMetric(t('codex.metric.network_errors'), summary.network_candidates || 0, t('codex.hint.network_errors'))}
+      ${renderCodexMetric(t('codex.metric.max_retry'), summary.max_retry_attempt || '0/5', t('codex.hint.recovery_depth'))}
     </div>
     <article class="card chart codex-chart">
       <div class="chart-header">
-        <h3>Codex 网络异常时间轴</h3>
-        <span>次数</span>
+        <h3>${t('codex.timeline_title')}</h3>
+        <span>${t('codex.timeline_unit')}</span>
       </div>
-      <svg viewBox="0 0 820 240" role="img" aria-label="Codex 网络异常时间轴"></svg>
+      <svg viewBox="0 0 820 240" role="img" aria-label="${t('codex.timeline_title')}"></svg>
       <div class="chart-tooltip" aria-hidden="true"></div>
     </article>
   `;
@@ -39,9 +40,9 @@ function renderCodexLoading(message) {
   const root = document.getElementById('codex-section');
   if (!root) return;
   root.innerHTML = `
-    <h2>Codex 网络稳定性</h2>
+    <h2>${t('codex.title')}</h2>
     <div class="panel">
-      <div class="empty">${escapeHTML(message || '正在分析 Codex 本地日志...')}</div>
+      <div class="empty">${escapeHTML(message || t('codex.loading'))}</div>
     </div>
   `;
 }
@@ -65,13 +66,13 @@ function drawCodexTimeline(svg, tooltip, points) {
   const padding = { top: 24, right: 22, bottom: 30, left: 48 };
   if (!points.length) {
     tooltip.remove();
-    svg.innerHTML = `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280">无数据</text>`;
+    svg.innerHTML = `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280">${t('common.no_data')}</text>`;
     return;
   }
 
   const series = [
-    { key: 'stream_retry', label: '断流重试', color: '#d65d47' },
-    { key: 'network_candidate', label: '网络错误', color: '#2a9d8f' },
+    { key: 'stream_retry', label: t('codex.series.retry'), color: '#d65d47' },
+    { key: 'network_candidate', label: t('codex.series.network'), color: '#2a9d8f' },
   ];
   const values = points.flatMap((point) => series.map((item) => Number(point[item.key] || 0)));
   const maxValue = Math.max(0, ...values);
@@ -145,7 +146,7 @@ function drawCodexTimeline(svg, tooltip, points) {
       circle.setAttribute('cy', position.cy);
     });
     tooltip.innerHTML = `
-      <div class="chart-tooltip-label">时间</div>
+      <div class="chart-tooltip-label">${t('ui.tooltip.time')}</div>
       <div class="chart-tooltip-value">${escapeHTML(formatCodexTooltipTime(point.ts))}</div>
       ${series.map((item) => `
         <div class="chart-tooltip-label" style="margin-top:6px;">${item.label}</div>
@@ -166,7 +167,7 @@ function drawCodexTimeline(svg, tooltip, points) {
 function formatCodexTooltipMetric(key, point) {
   const value = point.positions[key].value;
   if (key === 'stream_retry') {
-    return `${value} 次 / ${Number(point.stream_requests || 0)} 次采样`;
+    return formatText('codex.tooltip.retry', value, Number(point.stream_requests || 0));
   }
   return String(value);
 }
