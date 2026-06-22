@@ -11,7 +11,16 @@
 
 默认直接运行即可开始监控，同时启动 Web 面板。
 
-![netcheck 面板预览](img/screenshot-20260410-165114.png)
+<table>
+  <tr>
+    <td width="50%"><img src="img/cn-main.webp" width="100%" alt="netcheck 中文面板预览"></td>
+    <td width="50%"><img src="img/en-main.webp" width="100%" alt="netcheck 英文面板预览"></td>
+  </tr>
+  <tr>
+    <td align="center">中文面板</td>
+    <td align="center">英文面板</td>
+  </tr>
+</table>
 
 ## 适合什么场景
 
@@ -195,6 +204,19 @@ Linux 常见位置：
 - 三条链路各自的异常累计时长
 - 最近 10 条异常事件时间轴
 - Codex 断流重试和网络错误稳定性面板
+
+### 详情视图
+
+<table>
+  <tr>
+    <td width="50%"><img src="img/cn-detail.webp" width="100%" alt="netcheck 中文详情面板"></td>
+    <td width="50%"><img src="img/en-detail.webp" width="100%" alt="netcheck 英文详情面板"></td>
+  </tr>
+  <tr>
+    <td align="center">中文详情视图</td>
+    <td align="center">英文详情视图</td>
+  </tr>
+</table>
 
 ## License
 
