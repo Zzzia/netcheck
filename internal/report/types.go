@@ -144,6 +144,7 @@ type codexSummary struct {
 type codexTimelinePoint struct {
 	Ts               string `json:"ts"`
 	CompletedTurns   int    `json:"completed_turns"`
+	StreamRequests   int    `json:"stream_requests"`
 	StreamRetry      int    `json:"stream_retry"`
 	ToolError        int    `json:"tool_error"`
 	NetworkCandidate int    `json:"network_candidate"`

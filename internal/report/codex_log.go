@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -18,7 +17,7 @@ const maxCodexWindow = 24 * time.Hour
 
 var (
 	logPrefixPattern      = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+`)
-	trueRetryPattern      = regexp.MustCompile(`^\S+\s+WARN\s+.*: codex_core::session::turn: stream disconnected - retrying sampling request \((\d+)/(\d+) in ([0-9.]+)(ms|s)\)`)
+	trueRetryPattern      = regexp.MustCompile(`^\S+\s+(?:TRACE|DEBUG|INFO|WARN|ERROR)\s+.*stream disconnected - retrying sampling request \((\d+)/(\d+) in ([0-9.]+)(ms|s)\)`)
 	turnIDPattern         = regexp.MustCompile(`turn\.id=([0-9a-f-]{36})`)
 	threadIDPattern       = regexp.MustCompile(`thread_id=([0-9a-f-]{36})`)
 	threadDotIDPattern    = regexp.MustCompile(`thread\.id=([0-9a-f-]{36})`)
@@ -37,6 +36,7 @@ type codexParsedLine struct {
 	ts       time.Time
 	level    string
 	lineNo   int
+	target   string
 	raw      string
 	message  string
 	threadID string
@@ -52,7 +52,14 @@ type codexTurnStats struct {
 }
 
 func buildCodexReport(start, end time.Time) codexReport {
-	return buildCodexReportFromLog(defaultCodexLogPath(), start, end)
+	source, ok := defaultCodexLogSource()
+	if !ok {
+		return buildCodexReportFromLog(defaultCodexLogPath(), start, end)
+	}
+	if source.kind == codexLogSourceSQLite {
+		return buildCodexReportFromSQLite(source.path, start, end)
+	}
+	return buildCodexReportFromLog(source.path, start, end)
 }
 
 func buildCodexReportFromLog(logPath string, start, end time.Time) codexReport {
@@ -101,15 +108,19 @@ func defaultCodexLogPath() string {
 }
 
 type codexParseResult struct {
-	streamRequests int
-	completedTurns map[string]codexTurnStats
-	events         []codexEventRow
-	other          map[string]*codexIssueRow
-	noise          map[string]int
-	timeline       map[time.Time]*codexTimelinePoint
-	retryTurns     map[string]struct{}
-	maxRetry       string
-	counts         map[string]int
+	modernStreamRequests int
+	legacyStreamRequests int
+	completedTurns       map[string]codexTurnStats
+	sampledTurns         map[string]codexTurnStats
+	events               []codexEventRow
+	other                map[string]*codexIssueRow
+	noise                map[string]int
+	timeline             map[time.Time]*codexTimelinePoint
+	modernStreamTimeline map[time.Time]int
+	legacyStreamTimeline map[time.Time]int
+	retryTurns           map[string]struct{}
+	maxRetry             string
+	counts               map[string]int
 }
 
 func parseCodexLog(reader io.Reader, start, end time.Time) (codexParseResult, error) {
@@ -118,12 +129,15 @@ func parseCodexLog(reader io.Reader, start, end time.Time) (codexParseResult, er
 
 func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLineNumbers bool) (codexParseResult, error) {
 	result := codexParseResult{
-		completedTurns: map[string]codexTurnStats{},
-		other:          map[string]*codexIssueRow{},
-		noise:          map[string]int{},
-		timeline:       map[time.Time]*codexTimelinePoint{},
-		retryTurns:     map[string]struct{}{},
-		counts:         map[string]int{},
+		completedTurns:       map[string]codexTurnStats{},
+		sampledTurns:         map[string]codexTurnStats{},
+		other:                map[string]*codexIssueRow{},
+		noise:                map[string]int{},
+		timeline:             map[time.Time]*codexTimelinePoint{},
+		modernStreamTimeline: map[time.Time]int{},
+		legacyStreamTimeline: map[time.Time]int{},
+		retryTurns:           map[string]struct{}{},
+		counts:               map[string]int{},
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
@@ -140,22 +154,21 @@ func parseCodexLogWithLineMode(reader io.Reader, start, end time.Time, exactLine
 		if item.ts.After(end) {
 			break
 		}
-		if isStreamClose(item.raw) {
-			result.streamRequests++
+		if isModernStreamRequest(item.raw) {
+			result.addModernStreamRequest(item.ts.Local().Truncate(bucket.Duration))
+		} else if isLegacyStreamRequest(item.raw) {
+			result.addLegacyStreamRequest(item.ts.Local().Truncate(bucket.Duration))
 		}
-		if duration, ok := parseTurnDuration(item.raw); ok && item.turnID != "" {
-			result.completedTurns[item.turnID] = codexTurnStats{
-				durationSec:  duration,
-				inputTokens:  firstIntMatch(inputTokenPattern, item.raw),
-				outputTokens: firstIntMatch(outputTokenPattern, item.raw),
-				reasonTokens: firstIntMatch(reasoningTokenPattern, item.raw),
-			}
-			result.addTimelineCompletedTurn(item.ts.Local().Truncate(bucket.Duration))
+		if stats, ok := parseResponseCompletedTurnStats(item.raw); ok && item.turnID != "" {
+			result.sampledTurns[item.turnID] = stats
 		}
-		if item.level != "WARN" && item.level != "ERROR" {
-			continue
+		if stats, ok := parseCompletedTurnStats(item.raw, result.sampledTurns[item.turnID]); ok && item.turnID != "" {
+			result.addCompletedTurn(item.turnID, item.ts, bucket.Duration, stats)
 		}
 		classification := classifyCodexLine(item)
+		if classification.kind != "stream_retry" && item.level != "WARN" && item.level != "ERROR" {
+			continue
+		}
 		if classification.kind == "noise" {
 			result.noise[classification.label]++
 			continue
@@ -197,6 +210,7 @@ func parseCodexLine(raw string, lineNo int) (codexParsedLine, bool) {
 		level:    match[2],
 		lineNo:   lineNo,
 		raw:      raw,
+		target:   parseCodexTarget(raw),
 		message:  normalizeCodexMessage(raw),
 		threadID: firstStringMatch(threadIDPattern, raw, firstStringMatch(threadDotIDPattern, raw, "")),
 		turnID:   firstStringMatch(turnIDPattern, raw, ""),
@@ -205,7 +219,7 @@ func parseCodexLine(raw string, lineNo int) (codexParsedLine, bool) {
 }
 
 func classifyCodexLine(item codexParsedLine) codexLineClass {
-	if match := trueRetryPattern.FindStringSubmatch(item.raw); match != nil {
+	if match := trueRetryPattern.FindStringSubmatch(item.raw); match != nil && isTrueRetryLog(item) {
 		return codexLineClass{kind: "stream_retry", label: "响应流断开重试", attempt: match[1] + "/" + match[2], backoff: match[3] + match[4]}
 	}
 	lower := strings.ToLower(item.raw)
@@ -287,12 +301,13 @@ func (r *codexParseResult) summary() codexSummary {
 	}
 	completed := len(r.completedTurns)
 	retryEvents := r.counts["stream_retry"]
+	streamRequests := r.streamRequests()
 	return codexSummary{
-		StreamRequests:        r.streamRequests,
+		StreamRequests:        streamRequests,
 		CompletedTurns:        completed,
 		RetryEvents:           retryEvents,
 		RetryAffectedTurns:    len(r.retryTurns),
-		RetryEventRate:        formatPercentRatio(retryEvents, r.streamRequests),
+		RetryEventRate:        formatPercentRatio(retryEvents, streamRequests),
 		RetryAffectedTurnRate: formatPercentRatio(len(r.retryTurns), completed),
 		MaxRetryAttempt:       defaultString(r.maxRetry, "0/5"),
 		ToolErrors:            r.counts["tool_error"],
@@ -347,10 +362,15 @@ func (r *codexParseResult) timelineRows(start, end time.Time) []codexTimelinePoi
 	for current := first; !current.After(last); current = current.Add(bucket.Duration) {
 		point := r.timeline[current]
 		if point == nil {
-			rows = append(rows, codexTimelinePoint{Ts: current.Format(time.RFC3339)})
+			rows = append(rows, codexTimelinePoint{
+				Ts:             current.Format(time.RFC3339),
+				StreamRequests: r.streamRequestsForBucket(current),
+			})
 			continue
 		}
-		rows = append(rows, *point)
+		row := *point
+		row.StreamRequests = r.streamRequestsForBucket(current)
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -364,36 +384,22 @@ func (r *codexParseResult) noiseRows() []codexNoiseRow {
 	return rows
 }
 
+func (r *codexParseResult) addCompletedTurn(turnID string, ts time.Time, bucket time.Duration, stats codexTurnStats) {
+	previous, counted := r.completedTurns[turnID]
+	if stats == (codexTurnStats{}) && counted {
+		stats = previous
+	}
+	r.completedTurns[turnID] = stats
+	if !counted {
+		r.addTimelineCompletedTurn(ts.Local().Truncate(bucket))
+	}
+}
+
 func isStreamClose(raw string) bool {
 	return strings.Contains(raw, "codex_core::client: close") &&
 		strings.Contains(raw, "model_client.stream_responses_websocket{") &&
 		!strings.Contains(raw, "model_client.websocket_connection{") &&
 		!strings.Contains(raw, "ToolCall:")
-}
-
-func parseTurnDuration(raw string) (float64, bool) {
-	if !strings.Contains(raw, "codex_core::tasks: close") || !strings.Contains(raw, "session_task.turn") || strings.Contains(raw, "ToolCall:") {
-		return 0, false
-	}
-	match := turnIdlePattern.FindStringSubmatch(raw)
-	if match == nil {
-		return 0, false
-	}
-	return parseCodexDuration(match[1], match[2]), true
-}
-
-func parseCodexDuration(valueRaw, unit string) float64 {
-	value, _ := strconv.ParseFloat(valueRaw, 64)
-	switch unit {
-	case "µs", "us":
-		return value / 1_000_000
-	case "ms":
-		return value / 1000
-	case "m":
-		return value * 60
-	default:
-		return value
-	}
 }
 
 func normalizeCodexMessage(raw string) string {
@@ -436,52 +442,6 @@ func noiseName(lower string) string {
 	}
 }
 
-func formatPercentRatio(numerator, denominator int) string {
-	if denominator == 0 {
-		return "0%"
-	}
-	return formatPercent(float64(numerator) / float64(denominator))
-}
-
-func formatCodexSeconds(seconds float64) string {
-	if seconds <= 0 {
-		return ""
-	}
-	return formatDuration(int64(seconds + 0.5))
-}
-
-func firstStringMatch(pattern *regexp.Regexp, raw, fallback string) string {
-	match := pattern.FindStringSubmatch(raw)
-	if match == nil {
-		return fallback
-	}
-	return match[1]
-}
-
-func firstIntMatch(pattern *regexp.Regexp, raw string) int {
-	value, _ := strconv.Atoi(firstStringMatch(pattern, raw, "0"))
-	return value
-}
-
-func containsAny(raw string, items []string) bool {
-	for _, item := range items {
-		if strings.Contains(raw, item) {
-			return true
-		}
-	}
-	return false
-}
-
-func truncateText(raw string, limit int) string {
-	if len(raw) <= limit {
-		return raw
-	}
-	return raw[:limit] + "..."
-}
-
-func defaultString(raw, fallback string) string {
-	if raw == "" {
-		return fallback
-	}
-	return raw
+func isCodexToolEcho(raw string) bool {
+	return strings.Contains(raw, "ToolCall:") || strings.Contains(raw, `event.name="codex.tool_result"`)
 }

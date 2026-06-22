@@ -85,8 +85,8 @@ make dist
 
 ### Codex 使用体验
 
-- 读取当前用户本机 `~/.codex/log/codex-tui.log`
-- 重点统计 WebSocket 流式请求、自动重试、timeout / DNS / TLS / 5xx 等网络错误
+- 读取当前用户本机 Codex 日志，优先使用正在更新的 `~/.codex/logs*.sqlite`，兼容旧版 `~/.codex/log/codex-tui.log`
+- 重点统计模型采样请求、自动重试、timeout / DNS / TLS / 5xx 等网络错误；新版 Codex 日志以 `post sampling token usage` 作为采样请求分母，旧版日志回退到 WebSocket/stream close 打点
 - 在 Web 面板中生成独立时间轴，便于和上方网络连接测试时间轴对齐
 - 工具调用、权限、会话记录和未知 WARN/ERROR 不混入网络异常时间轴
 - 当 UI 选择范围超过 `24h` 时，Codex 日志统计自动收敛到最近 `24h`

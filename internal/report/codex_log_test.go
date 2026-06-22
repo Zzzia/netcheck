@@ -1,6 +1,8 @@
 package report
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -101,6 +103,189 @@ func TestBuildCodexReportMissingLogIsNonFatal(t *testing.T) {
 	}
 }
 
+func TestBuildCodexReportFromSQLiteLog(t *testing.T) {
+	start := time.Date(2026, 5, 6, 14, 0, 0, 0, time.Local)
+	end := start.Add(time.Hour)
+	dbPath := filepath.Join(t.TempDir(), "logs_2.sqlite")
+	writeCodexSQLiteLog(t, dbPath, []codexSQLiteTestRow{
+		{
+			ts:     start.Add(time.Minute),
+			level:  "WARN",
+			target: "codex_core::responses_retry",
+			body:   codexSQLiteBody("stream disconnected - retrying sampling request (1/5 in 194ms)..."),
+		},
+		{
+			ts:     start.Add(2 * time.Minute),
+			level:  "DEBUG",
+			target: "codex_core::goals",
+			body:   codexSQLiteBody("codex.turn.token_usage.input_tokens=100 codex.turn.token_usage.output_tokens=20 codex.turn.token_usage.reasoning_output_tokens=5"),
+		},
+		{
+			ts:     start.Add(3 * time.Minute),
+			level:  "INFO",
+			target: "codex_core::stream_events_utils",
+			body:   `ToolCall: exec_command {"cmd":"codex.turn.token_usage.input_tokens=999"}`,
+		},
+	})
+
+	report := buildCodexReportFromSQLite(dbPath, start, end)
+	if !report.Available {
+		t.Fatalf("期望 SQLite Codex 报告可用: %s", report.Error)
+	}
+	if report.Summary.RetryEvents != 1 || report.Summary.RetryAffectedTurns != 1 || report.Summary.CompletedTurns != 1 {
+		t.Fatalf("SQLite Codex 指标不符合预期: %#v", report.Summary)
+	}
+	if report.Events[0].Kind != "stream_retry" || report.Events[0].Attempt != "1/5" {
+		t.Fatalf("SQLite 断流事件解析不符合预期: %#v", report.Events)
+	}
+	if report.Events[0].InputTokens != 100 || report.Events[0].OutputTokens != 20 || report.Events[0].ReasonTokens != 5 {
+		t.Fatalf("SQLite turn token 统计不符合预期: %#v", report.Events[0])
+	}
+}
+
+func TestBuildCodexReportFromSQLiteModernResponseCompleted(t *testing.T) {
+	start := time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local)
+	end := start.Add(time.Hour)
+	dbPath := filepath.Join(t.TempDir(), "logs_2.sqlite")
+	writeCodexSQLiteLog(t, dbPath, []codexSQLiteTestRow{
+		{
+			ts:     start.Add(time.Minute),
+			level:  "WARN",
+			target: "codex_core::responses_retry",
+			body:   codexSQLiteBody("stream disconnected - retrying sampling request (1/5 in 194ms)..."),
+		},
+		{
+			ts:     start.Add(2 * time.Minute),
+			level:  "TRACE",
+			target: "codex_api::endpoint::responses_websocket",
+			body:   codexSQLiteBody(`stream_request:model_client.stream_responses_websocket{}:responses_websocket.stream_request{}: websocket event: ` + codexResponseCompletedJSON("resp_1", 100, 20, 5)),
+		},
+		{
+			ts:     start.Add(3 * time.Minute),
+			level:  "TRACE",
+			target: "codex_api::endpoint::responses_websocket",
+			body:   codexSQLiteBody(`stream_request:model_client.stream_responses_websocket{}:responses_websocket.stream_request{}: websocket event: ` + codexResponseCompletedJSON("resp_2", 120, 30, 6)),
+		},
+		{
+			ts:     start.Add(4 * time.Minute),
+			level:  "TRACE",
+			target: "codex_core::session::turn",
+			body:   codexSQLiteBody("run_turn: post sampling token usage turn_id=" + testTurnID + " total_usage_tokens=150 model_needs_follow_up=false has_pending_input=false needs_follow_up=false"),
+		},
+	})
+
+	report := buildCodexReportFromSQLite(dbPath, start, end)
+	if !report.Available {
+		t.Fatalf("期望 SQLite Codex 报告可用: %s", report.Error)
+	}
+	if report.Summary.StreamRequests != 1 || report.Summary.CompletedTurns != 1 || report.Summary.RetryAffectedTurns != 1 {
+		t.Fatalf("现代 Codex SQLite 指标不符合预期: %#v", report.Summary)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("期望保留 1 条重试事件，实际为 %d: %#v", len(report.Events), report.Events)
+	}
+	event := report.Events[0]
+	if event.InputTokens != 120 || event.OutputTokens != 30 || event.ReasonTokens != 6 {
+		t.Fatalf("应使用最终采样的 token usage 填充事件: %#v", event)
+	}
+}
+
+func TestBuildCodexReportFromSQLiteModernPostSamplingRequestDenominator(t *testing.T) {
+	start := time.Date(2026, 6, 22, 11, 0, 0, 0, time.Local)
+	end := start.Add(time.Hour)
+	dbPath := filepath.Join(t.TempDir(), "logs_2.sqlite")
+	writeCodexSQLiteLog(t, dbPath, []codexSQLiteTestRow{
+		{
+			ts:     start.Add(time.Minute),
+			level:  "WARN",
+			target: "codex_core::responses_retry",
+			body:   codexSQLiteBody("stream disconnected - retrying sampling request (1/5 in 194ms)..."),
+		},
+		{
+			ts:     start.Add(2 * time.Minute),
+			level:  "TRACE",
+			target: "codex_core::session::turn",
+			body:   codexSQLiteBody("run_turn: post sampling token usage turn_id=" + testTurnID + " total_usage_tokens=100 model_needs_follow_up=true has_pending_input=false needs_follow_up=true"),
+		},
+		{
+			ts:     start.Add(3 * time.Minute),
+			level:  "TRACE",
+			target: "codex_core::session::turn",
+			body:   codexSQLiteBody("run_turn: post sampling token usage turn_id=" + testTurnID + " total_usage_tokens=120 model_needs_follow_up=true has_pending_input=false needs_follow_up=true"),
+		},
+		{
+			ts:     start.Add(4 * time.Minute),
+			level:  "TRACE",
+			target: "codex_api::endpoint::responses_websocket",
+			body:   codexSQLiteBody(`stream_request:model_client.stream_responses_websocket{}:responses_websocket.stream_request{}: websocket event: ` + codexResponseCompletedJSON("resp_1", 100, 20, 5)),
+		},
+		{
+			ts:     start.Add(5 * time.Minute),
+			level:  "TRACE",
+			target: "codex_core::session::turn",
+			body:   codexSQLiteBody("run_turn: post sampling token usage turn_id=" + testTurnID + " total_usage_tokens=150 model_needs_follow_up=false has_pending_input=false needs_follow_up=false"),
+		},
+		{
+			ts:     start.Add(6 * time.Minute),
+			level:  "TRACE",
+			target: "codex_api::sse::responses",
+			body:   codexSQLiteBody("assistant text mentions stream disconnected - retrying sampling request (2/5 in 401ms)..."),
+		},
+	})
+
+	report := buildCodexReportFromSQLite(dbPath, start, end)
+	if !report.Available {
+		t.Fatalf("期望 SQLite Codex 报告可用: %s", report.Error)
+	}
+	if report.Summary.StreamRequests != 3 {
+		t.Fatalf("现代采样请求应按 post sampling 计数且不叠加 response.completed，实际为 %#v", report.Summary)
+	}
+	if report.Summary.CompletedTurns != 1 || report.Summary.RetryEvents != 1 || report.Summary.RetryAffectedTurns != 1 {
+		t.Fatalf("现代 Codex 完成 turn / retry 指标不符合预期: %#v", report.Summary)
+	}
+	if report.Summary.RetryEventRate != "33.3%" || report.Summary.RetryAffectedTurnRate != "100.0%" {
+		t.Fatalf("retry 比率应分别使用采样请求和完成 turn 作为分母: %#v", report.Summary)
+	}
+
+	streamRequests := 0
+	for _, point := range report.Timeline {
+		streamRequests += point.StreamRequests
+	}
+	if streamRequests != 3 {
+		t.Fatalf("timeline 应同步输出采样请求数，实际为 %d: %#v", streamRequests, report.Timeline)
+	}
+	if len(report.Events) != 1 || report.Events[0].Kind != "stream_retry" {
+		t.Fatalf("只有真实 responses_retry 日志应进入 retry 事件，实际为 %#v", report.Events)
+	}
+}
+
+func TestBuildCodexReportUsesSQLiteWhenTextLogMissing(t *testing.T) {
+	start := time.Date(2026, 5, 6, 14, 0, 0, 0, time.Local)
+	end := start.Add(time.Hour)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dbPath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	writeCodexSQLiteLog(t, dbPath, []codexSQLiteTestRow{
+		{
+			ts:     start.Add(time.Minute),
+			level:  "WARN",
+			target: "codex_core::responses_retry",
+			body:   codexSQLiteBody("stream disconnected - retrying sampling request (1/5 in 194ms)..."),
+		},
+	})
+
+	report := buildCodexReport(start, end)
+	if !report.Available {
+		t.Fatalf("期望默认入口能读取 SQLite Codex 日志: %s", report.Error)
+	}
+	if report.LogPath != dbPath {
+		t.Fatalf("期望默认入口选择 SQLite 日志，实际为 %s", report.LogPath)
+	}
+	if report.Summary.RetryEvents != 1 {
+		t.Fatalf("期望读取 SQLite retry，实际为 %#v", report.Summary)
+	}
+}
+
 func TestBuildCodexReportCurrentLogSmoke(t *testing.T) {
 	if os.Getenv("NETCHECK_TEST_CURRENT_CODEX_LOG") != "1" {
 		t.Skip("设置 NETCHECK_TEST_CURRENT_CODEX_LOG=1 时读取当前本机 Codex 日志做人工核对")
@@ -137,4 +322,63 @@ func TestBuildCodexReportCurrentLogSmoke(t *testing.T) {
 
 func codexLine(ts, level, message string) string {
 	return ts + " " + level + " session_loop{thread_id=" + testThreadID + "}:submission_dispatch{otel.name=\"op.dispatch.user_input_with_turn_context\" submission.id=\"" + testTurnID + "\" codex.op=\"user_input_with_turn_context\"}:turn{otel.name=\"session_task.turn\" thread.id=" + testThreadID + " turn.id=" + testTurnID + " model=gpt-5.5}: " + message
+}
+
+type codexSQLiteTestRow struct {
+	ts     time.Time
+	level  string
+	target string
+	body   string
+}
+
+func writeCodexSQLiteLog(t *testing.T, dbPath string, rows []codexSQLiteTestRow) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("创建 Codex SQLite 测试目录失败: %v", err)
+	}
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)", dbPath))
+	if err != nil {
+		t.Fatalf("打开 Codex SQLite 测试库失败: %v", err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TABLE logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts INTEGER NOT NULL,
+		ts_nanos INTEGER NOT NULL,
+		level TEXT NOT NULL,
+		target TEXT NOT NULL,
+		feedback_log_body TEXT,
+		thread_id TEXT
+	)`)
+	if err != nil {
+		t.Fatalf("创建 Codex SQLite 测试表失败: %v", err)
+	}
+	for _, row := range rows {
+		_, err := db.Exec(
+			`INSERT INTO logs(ts, ts_nanos, level, target, feedback_log_body, thread_id) VALUES (?, ?, ?, ?, ?, ?)`,
+			row.ts.Unix(),
+			row.ts.Nanosecond(),
+			row.level,
+			row.target,
+			row.body,
+			testThreadID,
+		)
+		if err != nil {
+			t.Fatalf("写入 Codex SQLite 测试日志失败: %v", err)
+		}
+	}
+}
+
+func codexSQLiteBody(message string) string {
+	return "session_loop{thread_id=" + testThreadID + "}:submission_dispatch{otel.name=\"op.dispatch.user_input\" submission.id=\"" + testTurnID + "\" codex.op=\"user_input\"}:turn{otel.name=\"session_task.turn\" thread.id=" + testThreadID + " turn.id=" + testTurnID + " model=gpt-5.5}: " + message
+}
+
+func codexResponseCompletedJSON(responseID string, inputTokens, outputTokens, reasoningTokens int) string {
+	return fmt.Sprintf(`{"type":"response.completed","response":{"id":%q,"created_at":1782100000,"status":"completed","completed_at":1782100007,"usage":{"input_tokens":%d,"input_tokens_details":{"cached_tokens":0},"output_tokens":%d,"output_tokens_details":{"reasoning_tokens":%d},"total_tokens":%d}}}`,
+		responseID,
+		inputTokens,
+		outputTokens,
+		reasoningTokens,
+		inputTokens+outputTokens,
+	)
 }

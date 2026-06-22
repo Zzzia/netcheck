@@ -18,8 +18,8 @@ function renderCodex(codex) {
       <span>${escapeHTML(codex.range_label || '')}${codex.clamped ? ' · 已按最近 24 小时统计' : ''}</span>
     </div>
     <div class="codex-grid">
-      ${renderCodexMetric('断流重试', `${summary.retry_events || 0} / ${summary.completed_turns || 0}`, `${summary.retry_affected_turn_rate || '0%'} / 完成 turn`)}
-      ${renderCodexMetric('受影响 turn', summary.retry_affected_turns || 0, `${summary.retry_affected_turn_rate || '0%'} / 完成 turn`)}
+      ${renderCodexMetric('断流重试', `${summary.retry_events || 0} / ${summary.stream_requests || 0}`, `${summary.retry_event_rate || '0%'} / 采样请求`)}
+      ${renderCodexMetric('受影响 turn', `${summary.retry_affected_turns || 0} / ${summary.completed_turns || 0}`, `${summary.retry_affected_turn_rate || '0%'} / 完成 turn`)}
       ${renderCodexMetric('网络错误', summary.network_candidates || 0, 'timeout / DNS / TLS / 5xx')}
       ${renderCodexMetric('最大重试深度', summary.max_retry_attempt || '0/5', '自动恢复深度')}
     </div>
@@ -166,7 +166,7 @@ function drawCodexTimeline(svg, tooltip, points) {
 function formatCodexTooltipMetric(key, point) {
   const value = point.positions[key].value;
   if (key === 'stream_retry') {
-    return `${value} 次 / ${Number(point.completed_turns || 0)} 轮`;
+    return `${value} 次 / ${Number(point.stream_requests || 0)} 次采样`;
   }
   return String(value);
 }
