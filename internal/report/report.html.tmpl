@@ -67,6 +67,14 @@
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      flex: 1 1 auto;
+    }
+    .custom-range-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      margin-left: auto;
     }
     .toolbar button, .toolbar input {
       border: 1px solid rgba(38,70,83,0.18);
@@ -75,6 +83,10 @@
       color: var(--ink);
       padding: 8px 12px;
       font: inherit;
+      white-space: nowrap;
+    }
+    .toolbar input {
+      min-width: 188px;
     }
     .toolbar button {
       cursor: pointer;
@@ -249,6 +261,19 @@
         grid-template-columns: 1fr;
       }
       .codex-title-row { display: block; }
+      .custom-range-group {
+        width: 100%;
+        margin-left: 0;
+      }
+    }
+    @media (max-width: 640px) {
+      .custom-range-group {
+        flex-wrap: wrap;
+      }
+      .custom-range-group input {
+        flex: 1 1 170px;
+        min-width: 0;
+      }
     }
   </style>
 </head>
@@ -276,9 +301,11 @@
         <button data-range="24h" data-i18n="ui.range.24h">Last 24 hours</button>
         <button data-range="7d" data-i18n="ui.range.7d">Last 7 days</button>
       </div>
-      <input id="start-input" type="datetime-local">
-      <input id="end-input" type="datetime-local">
-      <button id="apply-custom" data-i18n="ui.apply_custom">Apply custom range</button>
+      <div class="custom-range-group">
+        <input id="start-input" type="datetime-local">
+        <input id="end-input" type="datetime-local">
+        <button id="apply-custom" data-i18n="ui.apply_custom">Apply custom range</button>
+      </div>
     </section>
 
     <section class="summary-grid" id="summary-grid"></section>
