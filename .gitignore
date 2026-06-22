@@ -1,7 +1,10 @@
 /netcheck
 dist/
 report.html
+tools
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 .DS_Store
+internal/aibench
+cmd/ai-speed-bench
